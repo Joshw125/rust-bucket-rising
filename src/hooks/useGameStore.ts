@@ -54,7 +54,7 @@ export interface GameStore {
   toggleMarket: () => void;
   toggleLog: () => void;
   setPendingPowerChoice: (choice: PendingPowerChoice | null) => void;
-  confirmPowerChoice: (system: SystemType) => boolean;
+  confirmPowerChoice: (allocation: PowerAllocation) => boolean;
 
   // Game action helpers
   playCard: (cardInstanceId: string, powerAllocation?: PowerAllocation) => boolean;
@@ -282,12 +282,9 @@ export const useGameStore = create<GameStore>()(
       });
     },
 
-    confirmPowerChoice: (system) => {
+    confirmPowerChoice: (allocation) => {
       const { pendingPowerChoice } = get();
       if (!pendingPowerChoice) return false;
-
-      const allocation = { weapons: 0, computers: 0, engines: 0, logistics: 0 };
-      allocation[system] = pendingPowerChoice.powerAmount;
 
       const result = get().playCard(pendingPowerChoice.cardInstanceId, allocation);
 

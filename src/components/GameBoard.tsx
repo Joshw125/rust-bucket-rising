@@ -977,41 +977,137 @@ function PowerChoiceModal() {
   const confirmPowerChoice = useGameStore((s) => s.confirmPowerChoice);
   const setPendingPowerChoice = useGameStore((s) => s.setPendingPowerChoice);
 
+  const [allocation, setAllocation] = useState<Record<SystemType, number>>({
+    weapons: 0, computers: 0, engines: 0, logistics: 0,
+  });
+
+  // Reset allocation when a new power choice appears
+  const prevCardRef = useRef<string | null>(null);
+  if (pendingPowerChoice && pendingPowerChoice.cardInstanceId !== prevCardRef.current) {
+    prevCardRef.current = pendingPowerChoice.cardInstanceId;
+    setAllocation({ weapons: 0, computers: 0, engines: 0, logistics: 0 });
+  }
+
   if (!pendingPowerChoice) return null;
 
+  const total = pendingPowerChoice.powerAmount;
+  const allocated = allocation.weapons + allocation.computers + allocation.engines + allocation.logistics;
+  const remaining = total - allocated;
+
   const systems = [
-    { key: 'weapons' as const, name: 'Weapons', color: 'bg-weapons', textColor: 'text-weapons-light' },
-    { key: 'computers' as const, name: 'Computers', color: 'bg-computers', textColor: 'text-computers-light' },
-    { key: 'engines' as const, name: 'Engines', color: 'bg-engines', textColor: 'text-engines-light' },
-    { key: 'logistics' as const, name: 'Logistics', color: 'bg-logistics', textColor: 'text-logistics-light' },
+    { key: 'weapons' as SystemType, name: 'Weapons', color: 'bg-weapons', textColor: 'text-weapons-light' },
+    { key: 'computers' as SystemType, name: 'Computers', color: 'bg-computers', textColor: 'text-computers-light' },
+    { key: 'engines' as SystemType, name: 'Engines', color: 'bg-engines', textColor: 'text-engines-light' },
+    { key: 'logistics' as SystemType, name: 'Logistics', color: 'bg-logistics', textColor: 'text-logistics-light' },
   ];
+
+  const adjust = (sys: SystemType, delta: number) => {
+    setAllocation((prev) => {
+      const newVal = Math.max(0, prev[sys] + delta);
+      const othersTotal = Object.entries(prev).reduce((sum, [k, v]) => k === sys ? sum : sum + v, 0);
+      if (newVal + othersTotal > total) return prev;
+      return { ...prev, [sys]: newVal };
+    });
+  };
+
+  const assignAll = (sys: SystemType) => {
+    setAllocation({ weapons: 0, computers: 0, engines: 0, logistics: 0, [sys]: total });
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setPendingPowerChoice(null)}>
-      <div className="game-panel p-4 max-w-xs" onClick={(e) => e.stopPropagation()}>
+      <div className="game-panel p-4 max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="text-center mb-3">
           <div className="text-amber-400 font-bold text-sm">{pendingPowerChoice.cardTitle}</div>
-          <div className="text-slate-400 text-xs">+{pendingPowerChoice.powerAmount}⚡ to which system?</div>
+          <div className="text-slate-400 text-xs">
+            Distribute +{total}⚡ across systems
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1">
+        {/* Remaining indicator */}
+        <div className="text-center mb-3">
+          <span className={clsx(
+            'text-lg font-bold',
+            remaining > 0 ? 'text-amber-400' : 'text-green-400',
+          )}>
+            {remaining > 0 ? `${remaining}⚡ remaining` : 'All allocated ✓'}
+          </span>
+        </div>
+
+        {/* System allocation rows */}
+        <div className="flex flex-col gap-2 mb-4">
           {systems.map((sys) => (
-            <button
-              key={sys.key}
-              className={clsx(
-                'flex items-center justify-between px-3 py-2 rounded font-semibold transition-all',
-                'hover:bg-slate-700',
-                sys.textColor,
-              )}
-              onClick={() => confirmPowerChoice(sys.key)}
-            >
-              <span>{sys.name}</span>
-              <span className={clsx('px-2 py-0.5 rounded text-sm text-white', sys.color)}>
-                +{pendingPowerChoice.powerAmount}⚡
+            <div key={sys.key} className="flex items-center gap-2">
+              {/* System name */}
+              <span className={clsx('w-24 text-sm font-semibold', sys.textColor)}>{sys.name}</span>
+
+              {/* Minus button */}
+              <button
+                className={clsx(
+                  'w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all',
+                  allocation[sys.key] > 0
+                    ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => adjust(sys.key, -1)}
+                disabled={allocation[sys.key] <= 0}
+              >
+                −
+              </button>
+
+              {/* Current value */}
+              <span className={clsx(
+                'w-8 text-center text-lg font-bold',
+                allocation[sys.key] > 0 ? sys.textColor : 'text-slate-600',
+              )}>
+                {allocation[sys.key]}
               </span>
-            </button>
+
+              {/* Plus button */}
+              <button
+                className={clsx(
+                  'w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all',
+                  remaining > 0
+                    ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => adjust(sys.key, 1)}
+                disabled={remaining <= 0}
+              >
+                +
+              </button>
+
+              {/* Quick "all" button */}
+              <button
+                className={clsx(
+                  'px-2 py-0.5 rounded text-xs font-semibold transition-all',
+                  'bg-slate-700 hover:bg-slate-600 text-slate-300',
+                )}
+                onClick={() => assignAll(sys.key)}
+              >
+                All
+              </button>
+            </div>
           ))}
         </div>
+
+        {/* Confirm button */}
+        <button
+          className={clsx(
+            'w-full py-2 rounded-lg font-bold text-sm transition-all',
+            remaining === 0
+              ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+          )}
+          onClick={() => {
+            if (remaining === 0) {
+              confirmPowerChoice(allocation);
+            }
+          }}
+          disabled={remaining !== 0}
+        >
+          {remaining === 0 ? 'Confirm ⚡' : `Assign ${remaining} more ⚡`}
+        </button>
       </div>
     </div>
   );
