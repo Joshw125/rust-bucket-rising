@@ -12,3 +12,4 @@ export { ScaledSection } from './ScaledSection';
 export { ScaleSettingsPanel } from './ScaleSettingsPanel';
 export { MobileTabBar } from './MobileTabBar';
 export { MobileActionBar } from './MobileActionBar';
+export { AnimationOverlay } from './AnimationOverlay';

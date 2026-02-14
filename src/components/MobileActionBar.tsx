@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { clsx } from 'clsx';
+import { motion } from 'framer-motion';
 import { useGameStore, useCurrentPlayer } from '@/hooks';
 
 interface MobileActionBarProps {
@@ -45,6 +46,26 @@ export function MobileActionBar({ isMyTurn = true }: MobileActionBarProps) {
   const canRestart = canRestartTurn();
   const meetsMissionRequirements = storeCanCompleteMission();
 
+  // Build mission requirement tooltip
+  const getMissionTooltip = (): string => {
+    if (!isMyTurn) return 'Wait for your turn';
+    const trackMission = gameState.trackMissions[currentPlayer.location];
+    if (!trackMission?.revealed) return 'No mission here';
+    const hasCorruptedNav = currentPlayer.hand.some(c => c.type === 'hazard' && c.id === 'corrupted-nav-chip');
+    if (hasCorruptedNav) return 'Blocked by Corrupted Nav Chip!';
+    const reqs = trackMission.mission.requirements;
+    const parts: string[] = [];
+    for (const sys of ['weapons', 'computers', 'engines', 'logistics'] as const) {
+      const needed = (reqs[sys] ?? 0) - currentPlayer.missionDiscount;
+      if (needed > 0) {
+        const have = currentPlayer.currentPower[sys];
+        parts.push(`${sys}: ${have}/${needed}${have >= needed ? '\u2713' : '\u2717'}`);
+      }
+    }
+    if (meetsMissionRequirements) return `Ready! ${parts.join(', ')}`;
+    return `Need: ${parts.join(', ')}`;
+  };
+
   // Movement state
   const canMove = isMyTurn && (currentPlayer.movesRemaining > 0 || currentPlayer.currentPower.engines >= 1);
   const canMoveLeft = currentPlayer.location > 1 && canMove;
@@ -57,8 +78,28 @@ export function MobileActionBar({ isMyTurn = true }: MobileActionBarProps) {
     <div className="mobile-action-bar safe-area-bottom">
       {/* Player status strip */}
       <div className="flex items-center gap-1.5 mr-1">
-        <span className="text-amber-400 font-bold text-sm">★{currentPlayer.fame}</span>
-        <span className="text-amber-300 text-xs">💰{currentPlayer.credits}</span>
+        <span className="text-amber-400 font-bold text-sm">★
+          <motion.span
+            key={`mfame-${currentPlayer.fame}`}
+            initial={{ scale: 1.4 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="inline-block"
+          >
+            {currentPlayer.fame}
+          </motion.span>
+        </span>
+        <span className="text-amber-300 text-xs">💰
+          <motion.span
+            key={`mcred-${currentPlayer.credits}`}
+            initial={{ scale: 1.3 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="inline-block"
+          >
+            {currentPlayer.credits}
+          </motion.span>
+        </span>
       </div>
 
       {/* Divider */}
@@ -104,6 +145,7 @@ export function MobileActionBar({ isMyTurn = true }: MobileActionBarProps) {
         )}
         onClick={completeMission}
         disabled={!isMyTurn || !meetsMissionRequirements}
+        title={getMissionTooltip()}
       >
         🎯
       </button>

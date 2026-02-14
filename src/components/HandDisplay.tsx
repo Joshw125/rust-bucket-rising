@@ -3,8 +3,9 @@
 // Fanned card display for current player's hand
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
+import { motion } from 'framer-motion';
 import type { CardInstance, Player, SystemType, ActionCard, HazardCard } from '@/types';
 import { STARTING_CARDS } from '@/data/cards';
 import { Card } from './Card';
@@ -17,7 +18,7 @@ import { SYSTEMS, SYSTEM_CONFIG } from '@/data/constants';
 export interface HandDisplayProps {
   cards: CardInstance[];
   player: Player;
-  onPlayCard: (card: CardInstance) => void;
+  onPlayCard: (card: CardInstance, rect?: DOMRect) => void;
   onInstallCard: (card: CardInstance, system: SystemType) => void;
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
@@ -162,7 +163,8 @@ interface HandCardProps {
   player: Player;
   position: { rotation: number; translateX: number; translateY: number };
   zIndex: number;
-  onPlayCard: (card: CardInstance) => void;
+  index: number;
+  onPlayCard: (card: CardInstance, rect?: DOMRect) => void;
   onInstallCard: (card: CardInstance, system: SystemType) => void;
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
@@ -173,11 +175,13 @@ function HandCard({
   player,
   position,
   zIndex,
+  index,
   onPlayCard,
   onInstallCard,
   onClearHazard,
   onViewCard,
 }: HandCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -191,17 +195,26 @@ function HandCard({
   const canAffordInstall = isInstallable && player.credits >= Math.max(0, installCost);
   const canClear = hazardCard ? canClearHazard(player, hazardCard) : false;
 
+  // Capture bounding rect for ghost card animation
+  const getRect = () => cardRef.current?.getBoundingClientRect();
+
   // Click on card plays it (for non-hazards)
   const handleCardClick = () => {
     if (!isHazard) {
-      onPlayCard(card);
+      onPlayCard(card, getRect());
     } else if (canClear) {
       onClearHazard(card);
     }
   };
 
   return (
+    <motion.div
+      initial={{ opacity: 0, y: 60, scale: 0.6 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, delay: index * 0.06, ease: 'easeOut' }}
+    >
     <div
+      ref={cardRef}
       className="hand-card"
       style={{
         // Use CSS custom properties so hover can reference them
@@ -240,7 +253,7 @@ function HandCard({
             className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-sm px-4 py-2 rounded font-bold shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
-              onPlayCard(card);
+              onPlayCard(card, getRect());
             }}
           >
             ▶ Play
@@ -325,6 +338,7 @@ function HandCard({
         </button>
       </div>
     </div>
+    </motion.div>
   );
 }
 
@@ -335,7 +349,8 @@ function HandCard({
 interface VerticalHandCardProps {
   card: CardInstance;
   player: Player;
-  onPlayCard: (card: CardInstance) => void;
+  index: number;
+  onPlayCard: (card: CardInstance, rect?: DOMRect) => void;
   onInstallCard: (card: CardInstance, system: SystemType) => void;
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
@@ -344,11 +359,13 @@ interface VerticalHandCardProps {
 function VerticalHandCard({
   card,
   player,
+  index,
   onPlayCard,
   onInstallCard,
   onClearHazard,
   onViewCard,
 }: VerticalHandCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -362,16 +379,24 @@ function VerticalHandCard({
   const canAffordInstall = isInstallable && player.credits >= Math.max(0, installCost);
   const canClear = hazardCard ? canClearHazard(player, hazardCard) : false;
 
+  const getRect = () => cardRef.current?.getBoundingClientRect();
+
   const handleCardClick = () => {
     if (!isHazard) {
-      onPlayCard(card);
+      onPlayCard(card, getRect());
     } else if (canClear) {
       onClearHazard(card);
     }
   };
 
   return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.25, delay: index * 0.05 }}
+    >
     <div
+      ref={cardRef}
       className="relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
@@ -399,7 +424,7 @@ function VerticalHandCard({
               className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs px-2 py-1 rounded font-bold shadow-lg"
               onClick={(e) => {
                 e.stopPropagation();
-                onPlayCard(card);
+                onPlayCard(card, getRect());
               }}
             >
               ▶
@@ -483,6 +508,7 @@ function VerticalHandCard({
         </div>
       )}
     </div>
+    </motion.div>
   );
 }
 
@@ -515,11 +541,12 @@ export function HandDisplay({
   if (layout === 'vertical') {
     return (
       <div className="flex flex-col gap-3">
-        {sortedCards.map((card) => (
+        {sortedCards.map((card, index) => (
           <VerticalHandCard
             key={card.instanceId}
             card={card}
             player={player}
+            index={index}
             onPlayCard={onPlayCard}
             onInstallCard={onInstallCard}
             onClearHazard={onClearHazard}
@@ -540,6 +567,7 @@ export function HandDisplay({
           player={player}
           position={positions[index]}
           zIndex={index}
+          index={index}
           onPlayCard={onPlayCard}
           onInstallCard={onInstallCard}
           onClearHazard={onClearHazard}

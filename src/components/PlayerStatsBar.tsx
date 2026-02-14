@@ -3,9 +3,10 @@
 // Compact horizontal bar showing captain + systems + resources
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
+import { motion } from 'framer-motion';
 import type { Player, SystemType, CardInstance, MissionInstance, ActionCard } from '@/types';
 import { SYSTEM_CONFIG, MAX_POWER } from '@/data/constants';
 import { Card, MissionCard } from './Card';
@@ -42,21 +43,52 @@ interface PowerPipsProps {
 
 function PowerPips({ system, current, max = MAX_POWER }: PowerPipsProps) {
   const config = SYSTEM_CONFIG[system];
+  const prevRef = useRef(current);
+  const [animatingPips, setAnimatingPips] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const prev = prevRef.current;
+    if (prev !== current) {
+      const newAnimating = new Set<number>();
+      if (current > prev) {
+        // Filling pips
+        for (let i = prev; i < current; i++) newAnimating.add(i);
+      } else {
+        // Draining pips
+        for (let i = current; i < prev; i++) newAnimating.add(i);
+      }
+      setAnimatingPips(newAnimating);
+      prevRef.current = current;
+
+      // Clear animation state after animation completes
+      const timer = setTimeout(() => setAnimatingPips(new Set()), 450);
+      return () => clearTimeout(timer);
+    }
+  }, [current]);
 
   return (
     <div className="flex gap-1">
-      {Array.from({ length: max }, (_, i) => (
-        <div
-          key={i}
-          className={clsx(
-            'w-4 h-4 rounded-full border-2 transition-all',
-            i < current
-              ? 'power-pip-overlay filled'
-              : 'power-pip-overlay',
-          )}
-          style={{ color: config.color, borderColor: config.color }}
-        />
-      ))}
+      {Array.from({ length: max }, (_, i) => {
+        const isFilled = i < current;
+        const isAnimating = animatingPips.has(i);
+        const isFilling = isAnimating && isFilled;
+        const isDraining = isAnimating && !isFilled;
+
+        return (
+          <motion.div
+            key={i}
+            className={clsx(
+              'w-4 h-4 rounded-full border-2',
+              isFilled ? 'power-pip-overlay filled' : 'power-pip-overlay',
+              isFilling && 'pip-filling',
+              isDraining && 'pip-draining',
+            )}
+            style={{ color: config.color, borderColor: config.color }}
+            animate={isFilling ? { scale: [1, 1.4, 1] } : isDraining ? { scale: [1, 1.3, 1] } : { scale: 1 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          />
+        );
+      })}
     </div>
   );
 }

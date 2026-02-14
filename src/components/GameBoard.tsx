@@ -5,10 +5,12 @@
 
 import { clsx } from 'clsx';
 import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import { useGameStore, useCurrentPlayer, usePlayers, useIsGameOver, useWinner, useMultiplayer } from '@/hooks';
 import { useUIScaleStore } from '@/hooks/useUIScaleStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useMobileViewStore } from '@/hooks/useMobileViewStore';
+import { useAnimationStore } from '@/hooks/useAnimationStore';
 import { SpaceTrack } from './SpaceTrack';
 import { ExpandedSystemPanel } from './PlayerStatsBar';
 import { HandDisplay } from './HandDisplay';
@@ -20,8 +22,9 @@ import { ScaledSection } from './ScaledSection';
 import { ScaleSettingsPanel } from './ScaleSettingsPanel';
 import { MobileTabBar } from './MobileTabBar';
 import { MobileActionBar } from './MobileActionBar';
-import type { SystemType, MissionInstance, GameAction } from '@/types';
-import { useState, useCallback, useEffect } from 'react';
+import { AnimationOverlay } from './AnimationOverlay';
+import type { SystemType, MissionInstance, GameAction, CardInstance } from '@/types';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Header Component
@@ -230,6 +233,30 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
   const missionRevealed = trackMission?.revealed;
   const meetsMissionRequirements = storeCanCompleteMission();
 
+  // Build descriptive tooltip for mission button
+  const getMissionTooltip = (): string => {
+    if (!isMyTurn) return 'Wait for your turn';
+    if (!trackMission || !missionRevealed) return 'No mission at this location';
+    // Check hazards blocking
+    const hasCorruptedNav = currentPlayer.hand.some(c => c.type === 'hazard' && c.id === 'corrupted-nav-chip');
+    if (hasCorruptedNav) return 'Blocked by Corrupted Nav Chip hazard!';
+    const mission = trackMission.mission;
+    const reqs = mission.requirements;
+    const parts: string[] = [];
+    for (const sys of ['weapons', 'computers', 'engines', 'logistics'] as const) {
+      const needed = (reqs[sys] ?? 0) - currentPlayer.missionDiscount;
+      if (needed > 0) {
+        const have = currentPlayer.currentPower[sys];
+        const met = have >= needed;
+        parts.push(`${sys}: ${have}/${needed}${met ? ' \u2713' : ' \u2717'}`);
+      }
+    }
+    const hasWarrant = currentPlayer.hand.some(c => c.type === 'hazard' && c.id === 'warrant-issued');
+    if (hasWarrant) parts.push(`Credits: ${currentPlayer.credits}/2 (warrant)`);
+    if (meetsMissionRequirements) return `Ready! ${parts.join(', ')}`;
+    return `Need: ${parts.join(', ')}`;
+  };
+
   // Check if player can move
   const canMove = isMyTurn && (currentPlayer.movesRemaining > 0 || currentPlayer.currentPower.engines >= 1);
   const canMoveLeft = currentPlayer.location > 1 && canMove;
@@ -287,7 +314,7 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
         )}
         onClick={completeMission}
         disabled={!isMyTurn || !meetsMissionRequirements}
-        title={!isMyTurn ? 'Wait for your turn' : !missionRevealed ? 'No mission here' : !meetsMissionRequirements ? 'Requirements not met' : 'Complete mission!'}
+        title={getMissionTooltip()}
       >
         🎯 Complete Mission
       </button>
@@ -1017,11 +1044,27 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     }
   }, [isOnlineGame, sendGameAction, setOnActionDispatched]);
 
+  // Animation refs
+  const playedPileRef = useRef<HTMLDivElement>(null);
+  const discardPileRef = useRef<HTMLDivElement>(null);
+  const animEmit = useAnimationStore((s) => s.emit);
+  const animSetRef = useAnimationStore((s) => s.setRef);
+
+  // Register pile refs for animation targets
+  useEffect(() => {
+    animSetRef('playedPile', playedPileRef.current);
+    animSetRef('discardPile', discardPileRef.current);
+  }, [animSetRef]);
+
   // Wrapped actions that check turn ownership
-  const playCardWithChoice = useCallback((card: Parameters<typeof storePlayCardWithChoice>[0]) => {
+  const playCardWithChoice = useCallback((card: CardInstance, rect?: DOMRect) => {
     if (!isMyTurn) return;
+    // Emit ghost card animation before dispatching
+    if (rect) {
+      animEmit({ type: 'card-play', card, fromRect: rect, target: 'played' });
+    }
     storePlayCardWithChoice(card);
-  }, [isMyTurn, storePlayCardWithChoice]);
+  }, [isMyTurn, storePlayCardWithChoice, animEmit]);
 
   const installCard = useCallback((cardInstanceId: string, targetSystem: SystemType) => {
     if (!isMyTurn) return false;
@@ -1425,7 +1468,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             </div>
 
             {/* Played pile (this turn) */}
-            <div className="flex flex-col items-center">
+            <div ref={playedPileRef} className="flex flex-col items-center">
               <div className="relative">
                 {currentPlayer.played.length > 0 ? (
                   <>
@@ -1449,7 +1492,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             </div>
 
             {/* Discard pile */}
-            <div className="flex flex-col items-center">
+            <div ref={discardPileRef} className="flex flex-col items-center">
               <div className="relative">
                 {currentPlayer.discard.length > 0 ? (
                   <>
@@ -1506,11 +1549,27 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <span className="text-amber-400">★</span>
-                    <span className="text-amber-400 font-bold text-lg">{currentPlayer.fame}</span>
+                    <motion.span
+                      key={`fame-${currentPlayer.fame}`}
+                      initial={{ scale: 1.4 }}
+                      animate={{ scale: 1 }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                      className="text-amber-400 font-bold text-lg"
+                    >
+                      {currentPlayer.fame}
+                    </motion.span>
                   </div>
                   <div className="flex items-center gap-1">
                     <span className="text-amber-300 text-sm">💰</span>
-                    <span className="text-amber-300 font-semibold">{currentPlayer.credits}</span>
+                    <motion.span
+                      key={`credits-${currentPlayer.credits}`}
+                      initial={{ scale: 1.3, color: '#fbbf24' }}
+                      animate={{ scale: 1, color: '#fcd34d' }}
+                      transition={{ duration: 0.3 }}
+                      className="text-amber-300 font-semibold"
+                    >
+                      {currentPlayer.credits}
+                    </motion.span>
                   </div>
                   {currentPlayer.movesRemaining > 0 && (
                     <div className="flex items-center gap-1 px-1.5 py-0.5 bg-engines/20 rounded">
@@ -1643,6 +1702,9 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* UI Scale Settings Panel */}
       <ScaleSettingsPanel />
+
+      {/* Animation overlay (ghost cards, floating numbers) */}
+      <AnimationOverlay />
     </div>
   );
 }
