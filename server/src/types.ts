@@ -11,6 +11,7 @@ export interface RoomPlayer {
   id: string;
   name: string;
   captainId: string | null;
+  captainChoices: string[]; // 2 random captain options assigned by server
   isReady: boolean;
   isHost: boolean;
   isConnected: boolean;

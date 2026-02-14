@@ -1419,7 +1419,7 @@ export class GameEngine {
     // T1 is always revealed, so this shouldn't apply
     if (station === 1) return true;
     // Can only reveal one stack per tier per turn
-    return !player.revealedStacksThisTurn[station];
+    return player.revealedStacksThisTurn[station] === false;
   }
 
   // Reveal a market stack when a player browses it
@@ -1430,7 +1430,7 @@ export class GameEngine {
     if (!stackInfo || stackInfo.revealed) return false;
 
     // Check tier reveal limit for T2/T3
-    if (station !== 1 && player.revealedStacksThisTurn[station]) {
+    if (station !== 1 && player.revealedStacksThisTurn[station] !== false) {
       this.log(`Cannot reveal another Tier ${station === 3 ? 2 : 3} stack this turn`, 'info');
       return false;
     }
@@ -1438,9 +1438,9 @@ export class GameEngine {
     stackInfo.revealed = true;
     this.state.hasRevealedInfo = true;
 
-    // Mark this tier as having a revealed stack this turn
+    // Mark which stack was revealed at this tier this turn
     if (station !== 1) {
-      player.revealedStacksThisTurn[station] = true;
+      player.revealedStacksThisTurn[station] = stackIndex;
     }
 
     this.log(`Market stack at station ${station} was revealed`, 'info');

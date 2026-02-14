@@ -36,6 +36,34 @@ const playerToRoom = new Map<string, string>();
 // Utility Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
+// All selectable captain IDs (excluding Ghost)
+const SELECTABLE_CAPTAIN_IDS = [
+  'scrapper', 'veteran', 'tycoon', 'mercenary',
+  'navigator', 'broker', 'engineer', 'infiltrator',
+];
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Assign 2 random captain choices to a new player, avoiding captains already assigned to others
+function assignCaptainChoices(room: Room): string[] {
+  const usedChoices = new Set<string>();
+  for (const p of room.players) {
+    for (const c of p.captainChoices) {
+      usedChoices.add(c);
+    }
+  }
+  const available = SELECTABLE_CAPTAIN_IDS.filter(id => !usedChoices.has(id));
+  const shuffled = shuffleArray(available);
+  return shuffled.slice(0, 2);
+}
+
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid confusing characters
   let code = '';
@@ -82,24 +110,29 @@ function getClientByPlayerId(playerId: string): ConnectedClient | undefined {
 
 function createRoom(hostId: string, hostName: string): Room {
   const roomId = uuidv4();
+  // Create room first with empty players so assignCaptainChoices works
   const room: Room = {
     id: roomId,
     code: generateRoomCode(),
     name: `${hostName}'s Game`,
     hostId,
-    players: [{
-      id: hostId,
-      name: hostName,
-      captainId: null,
-      isReady: false,
-      isHost: true,
-      isConnected: true,
-    }],
+    players: [],
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     status: 'lobby',
     gameState: null,
     createdAt: Date.now(),
   };
+  // Assign captain choices for the host (no existing players to conflict with)
+  const hostChoices = assignCaptainChoices(room);
+  room.players.push({
+    id: hostId,
+    name: hostName,
+    captainId: null,
+    captainChoices: hostChoices,
+    isReady: false,
+    isHost: true,
+    isConnected: true,
+  });
   rooms.set(roomId, room);
   playerToRoom.set(hostId, roomId);
   return room;
@@ -116,10 +149,14 @@ function joinRoom(room: Room, playerId: string, playerName: string): RoomPlayer 
     return null;
   }
 
+  // Assign 2 random captain choices that don't overlap with other players
+  const choices = assignCaptainChoices(room);
+
   const player: RoomPlayer = {
     id: playerId,
     name: playerName,
     captainId: null,
+    captainChoices: choices,
     isReady: false,
     isHost: false,
     isConnected: true,
@@ -270,15 +307,14 @@ function handleSelectCaptain(ws: WebSocket, client: ConnectedClient, captainId: 
   const room = rooms.get(client.roomId);
   if (!room || room.status !== 'lobby') return;
 
-  // Check if captain is already taken
-  const captainTaken = room.players.some(p => p.captainId === captainId && p.id !== client.playerId);
-  if (captainTaken) {
-    send(ws, { type: 'ERROR', message: 'Captain already selected by another player.' });
-    return;
-  }
-
   const player = room.players.find(p => p.id === client.playerId);
   if (!player) return;
+
+  // Validate the captain is one of this player's assigned choices
+  if (!player.captainChoices.includes(captainId)) {
+    send(ws, { type: 'ERROR', message: 'That captain is not one of your choices.' });
+    return;
+  }
 
   player.captainId = captainId;
   player.isReady = false; // Reset ready state when changing captain

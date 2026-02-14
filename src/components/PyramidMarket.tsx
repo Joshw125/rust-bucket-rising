@@ -526,14 +526,27 @@ export function PyramidMarket({
     stackIndex: number;
   } | null>(null);
 
+  // Determine which stack (if any) the current player revealed THIS TURN at each tier
+  // Only that stack can be fully browsed; other revealed stacks show top card only
+  const revealedThisTurn = currentPlayer.revealedStacksThisTurn;
+
+  // Check if a T2/T3 stack can be fully browsed (was just revealed this turn and player is present)
+  const canBrowseStack = (station: 1 | 3 | 5, stackIndex: number): boolean => {
+    if (station === 1) return false; // T1 never uses browser modal
+    if (currentPlayer.location !== station) return false; // Must be at station
+    return revealedThisTurn[station] === stackIndex; // Only the stack revealed this turn
+  };
+
   // Handle opening the stack browser when a revealed T2/T3 stack is clicked
   const handleStackClick = (station: 1 | 3 | 5, stackIndex: number) => {
     const stackInfo = marketStacks[station][stackIndex];
-    if (stackInfo?.revealed && stackInfo.cards.length > 0 && station !== 1) {
-      // T2/T3: Open browser modal
+    if (!stackInfo?.revealed || stackInfo.cards.length === 0) return;
+
+    if (canBrowseStack(station, stackIndex)) {
+      // This is the stack we revealed this turn — open full browser
       setBrowsingStack({ station, stackIndex });
-    } else if (stackInfo?.revealed) {
-      // T1: Just view the top card
+    } else {
+      // Just view the top card (T1, or stacks revealed on previous turns/by other players)
       onViewCard?.(stackInfo.cards[stackInfo.cards.length - 1]);
     }
   };

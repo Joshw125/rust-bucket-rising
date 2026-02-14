@@ -352,7 +352,7 @@ export interface Player {
   hazardsInDeck: number;
 
   // Turn tracking for reveals
-  revealedStacksThisTurn: Record<1 | 3 | 5, boolean>; // Can only reveal one stack per tier per turn
+  revealedStacksThisTurn: Record<1 | 3 | 5, number | false>; // Tracks which stack index was revealed per tier this turn (false = none)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
