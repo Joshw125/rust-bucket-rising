@@ -1,8 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RUST BUCKET RISING - Game Setup Screen
+// Themed setup with large captain card art and randomized 2-choice selection
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { CAPTAINS } from '@/data';
 import type { Captain, AIStrategy } from '@/types';
@@ -16,6 +17,7 @@ interface PlayerConfig {
   captain: Captain | null;
   isAI: boolean;
   aiStrategy: AIStrategy;
+  captainChoices: Captain[]; // 2 random captain options for this player
 }
 
 const AI_STRATEGIES: { value: AIStrategy; label: string; description: string }[] = [
@@ -26,45 +28,79 @@ const AI_STRATEGIES: { value: AIStrategy; label: string; description: string }[]
   { value: 'rush', label: 'Rush', description: 'Races for victory' },
 ];
 
+// Captains eligible for random selection (exclude Ghost)
+const SELECTABLE_CAPTAINS = CAPTAINS.filter(c => c.id !== 'ghost');
+
 export interface GameSetupProps {
   onStartGame: (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Captain Selector Component
+// Utility: shuffle array
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface CaptainSelectorProps {
-  selectedCaptain: Captain | null;
-  onSelect: (captain: Captain) => void;
-  usedCaptains: string[];
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
-function CaptainSelector({ selectedCaptain, onSelect, usedCaptains }: CaptainSelectorProps) {
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {CAPTAINS.map(captain => {
-        const isUsed = usedCaptains.includes(captain.id);
-        const isSelected = selectedCaptain?.id === captain.id;
+// Assign 2 unique random captain choices per player, no overlaps
+function assignCaptainChoices(numPlayers: number): Captain[][] {
+  const shuffled = shuffle(SELECTABLE_CAPTAINS);
+  const choices: Captain[][] = [];
+  for (let i = 0; i < numPlayers; i++) {
+    choices.push(shuffled.slice(i * 2, i * 2 + 2));
+  }
+  return choices;
+}
 
-        return (
-          <button
-            key={captain.id}
-            className={clsx(
-              'p-2 rounded-lg border-2 text-left transition-all',
-              isSelected && 'border-amber-500 bg-amber-500/20',
-              !isSelected && !isUsed && 'border-slate-600 hover:border-slate-500 bg-slate-800',
-              isUsed && !isSelected && 'border-slate-700 bg-slate-900 opacity-50 cursor-not-allowed',
-            )}
-            onClick={() => !isUsed && onSelect(captain)}
-            disabled={isUsed && !isSelected}
-          >
-            <div className="font-bold text-amber-400 text-sm">{captain.name}</div>
-            <div className="text-xs text-slate-400 mt-1">{captain.effect}</div>
-          </button>
-        );
-      })}
-    </div>
+// ─────────────────────────────────────────────────────────────────────────────
+// Captain Card Choice Component
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface CaptainCardProps {
+  captain: Captain;
+  isSelected: boolean;
+  onSelect: () => void;
+}
+
+function CaptainCard({ captain, isSelected, onSelect }: CaptainCardProps) {
+  return (
+    <button
+      className={clsx(
+        'relative rounded-xl overflow-hidden transition-all duration-200 group',
+        isSelected
+          ? 'ring-3 ring-amber-400 shadow-lg shadow-amber-500/30 scale-105'
+          : 'ring-2 ring-slate-600 hover:ring-amber-500/50 hover:scale-[1.02]',
+      )}
+      onClick={onSelect}
+    >
+      {/* Captain card image */}
+      <img
+        src={`/cards/captain/${captain.image}`}
+        alt={captain.name}
+        className="w-full h-auto block"
+        draggable={false}
+      />
+
+      {/* Selected overlay */}
+      {isSelected && (
+        <div className="absolute inset-0 bg-amber-400/10 flex items-start justify-end p-2">
+          <div className="bg-amber-500 text-slate-900 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm shadow-lg">
+            ✓
+          </div>
+        </div>
+      )}
+
+      {/* Hover glow */}
+      {!isSelected && (
+        <div className="absolute inset-0 bg-amber-400/0 group-hover:bg-amber-400/5 transition-colors" />
+      )}
+    </button>
   );
 }
 
@@ -78,7 +114,6 @@ interface PlayerConfigRowProps {
   onChange: (config: PlayerConfig) => void;
   onRemove: () => void;
   canRemove: boolean;
-  usedCaptains: string[];
 }
 
 function PlayerConfigRow({
@@ -87,20 +122,26 @@ function PlayerConfigRow({
   onChange,
   onRemove,
   canRemove,
-  usedCaptains,
 }: PlayerConfigRowProps) {
-  const [showCaptains, setShowCaptains] = useState(false);
+  const playerColors = [
+    { border: 'border-purple-500/40', bg: 'bg-purple-900/20', label: 'text-purple-400' },
+    { border: 'border-orange-500/40', bg: 'bg-orange-900/20', label: 'text-orange-400' },
+    { border: 'border-cyan-500/40', bg: 'bg-cyan-900/20', label: 'text-cyan-400' },
+    { border: 'border-pink-500/40', bg: 'bg-pink-900/20', label: 'text-pink-400' },
+  ];
+  const pColor = playerColors[index % playerColors.length];
 
   return (
     <div className={clsx(
-      'rounded-lg p-4 border',
-      config.isAI ? 'bg-purple-900/30 border-purple-700' : 'bg-slate-800 border-slate-700'
+      'rounded-xl p-5 border backdrop-blur-sm',
+      pColor.border, pColor.bg,
     )}>
-      <div className="flex items-center justify-between mb-3">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <h3 className="font-bold text-white">Player {index + 1}</h3>
+          <h3 className={clsx('text-lg font-bold', pColor.label)}>Player {index + 1}</h3>
           {/* Human/AI toggle */}
-          <div className="flex bg-slate-700 rounded-lg p-0.5">
+          <div className="flex bg-slate-900/60 rounded-lg p-0.5">
             <button
               className={clsx(
                 'px-3 py-1 rounded text-xs font-semibold transition-all',
@@ -123,7 +164,7 @@ function PlayerConfigRow({
         </div>
         {canRemove && (
           <button
-            className="text-slate-500 hover:text-red-400 transition-colors"
+            className="text-slate-500 hover:text-red-400 text-sm transition-colors"
             onClick={onRemove}
           >
             ✕ Remove
@@ -131,32 +172,31 @@ function PlayerConfigRow({
         )}
       </div>
 
-      <div className="space-y-3">
-        {/* Name input */}
-        <div>
-          <label className="block text-xs text-slate-400 mb-1">Name</label>
+      {/* Name and AI strategy in a row */}
+      <div className="flex gap-3 mb-4">
+        <div className="flex-1">
+          <label className="block text-xs text-slate-500 mb-1">Name</label>
           <input
             type="text"
             value={config.name}
             onChange={(e) => onChange({ ...config, name: e.target.value })}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded text-white focus:border-amber-500 focus:outline-none"
+            className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none"
             placeholder={config.isAI ? `AI ${index + 1}` : `Player ${index + 1}`}
           />
         </div>
 
-        {/* AI Strategy selector (only for AI players) */}
         {config.isAI && (
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">AI Strategy</label>
-            <div className="grid grid-cols-5 gap-1">
+          <div className="flex-1">
+            <label className="block text-xs text-slate-500 mb-1">AI Strategy</label>
+            <div className="flex gap-1 flex-wrap">
               {AI_STRATEGIES.map(strat => (
                 <button
                   key={strat.value}
                   className={clsx(
-                    'px-2 py-1.5 rounded text-xs font-semibold transition-all',
+                    'px-2 py-1.5 rounded text-[10px] font-semibold transition-all',
                     config.aiStrategy === strat.value
                       ? 'bg-purple-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700'
                   )}
                   onClick={() => onChange({ ...config, aiStrategy: strat.value })}
                   title={strat.description}
@@ -167,41 +207,20 @@ function PlayerConfigRow({
             </div>
           </div>
         )}
+      </div>
 
-        {/* Captain selection */}
-        <div>
-          <label className="block text-xs text-slate-400 mb-1">Captain</label>
-          <button
-            className={clsx(
-              'w-full px-3 py-2 rounded border text-left transition-colors',
-              config.captain
-                ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                : 'bg-slate-900 border-slate-600 text-slate-400 hover:border-slate-500',
-            )}
-            onClick={() => setShowCaptains(!showCaptains)}
-          >
-            {config.captain ? (
-              <div>
-                <div className="font-semibold">{config.captain.name}</div>
-                <div className="text-xs opacity-75">{config.captain.effect}</div>
-              </div>
-            ) : (
-              'Select Captain...'
-            )}
-          </button>
-
-          {showCaptains && (
-            <div className="mt-2">
-              <CaptainSelector
-                selectedCaptain={config.captain}
-                onSelect={(captain) => {
-                  onChange({ ...config, captain });
-                  setShowCaptains(false);
-                }}
-                usedCaptains={usedCaptains}
-              />
-            </div>
-          )}
+      {/* Captain selection — two big card images side by side */}
+      <div>
+        <label className="block text-xs text-slate-500 mb-2">Choose Your Captain</label>
+        <div className="grid grid-cols-2 gap-3">
+          {config.captainChoices.map((captain) => (
+            <CaptainCard
+              key={captain.id}
+              captain={captain}
+              isSelected={config.captain?.id === captain.id}
+              onSelect={() => onChange({ ...config, captain })}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -213,14 +232,13 @@ function PlayerConfigRow({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function GameSetup({ onStartGame }: GameSetupProps) {
-  const [players, setPlayers] = useState<PlayerConfig[]>([
-    { name: 'Player 1', captain: null, isAI: false, aiStrategy: 'balanced' },
-    { name: 'AI 2', captain: null, isAI: true, aiStrategy: 'balanced' },
-  ]);
+  // Generate initial captain choices for 2 players
+  const initialChoices = useMemo(() => assignCaptainChoices(4), []); // pre-generate for max players
 
-  const usedCaptains = players
-    .filter(p => p.captain)
-    .map(p => p.captain!.id);
+  const [players, setPlayers] = useState<PlayerConfig[]>([
+    { name: 'Player 1', captain: null, isAI: false, aiStrategy: 'balanced', captainChoices: initialChoices[0] },
+    { name: 'AI 2', captain: null, isAI: true, aiStrategy: 'balanced', captainChoices: initialChoices[1] },
+  ]);
 
   const canAddPlayer = players.length < 4;
   const canRemovePlayer = players.length > 2;
@@ -228,7 +246,14 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
 
   const addPlayer = () => {
     if (canAddPlayer) {
-      setPlayers([...players, { name: `AI ${players.length + 1}`, captain: null, isAI: true, aiStrategy: 'balanced' }]);
+      const newIndex = players.length;
+      setPlayers([...players, {
+        name: `AI ${newIndex + 1}`,
+        captain: null,
+        isAI: true,
+        aiStrategy: 'balanced',
+        captainChoices: initialChoices[newIndex],
+      }]);
     }
   };
 
@@ -259,20 +284,25 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
   const aiCount = players.filter(p => p.isAI).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-8">
-      <div className="max-w-2xl w-full">
+    <div className="min-h-screen relative text-white flex items-center justify-center p-6">
+      {/* Dark overlay matching the main menu */}
+      <div className="fixed inset-0 bg-black/60 pointer-events-none" />
+
+      <div className="max-w-3xl w-full relative z-10">
         {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-amber-500 mb-2">RUST BUCKET RISING</h1>
-          <p className="text-slate-400">Digital Playtest Edition</p>
+        <div className="text-center mb-6">
+          <h1 className="text-4xl font-black tracking-tight mb-1">
+            <span className="bg-gradient-to-r from-amber-400 via-orange-500 to-rust bg-clip-text text-transparent">
+              RUST BUCKET RISING
+            </span>
+          </h1>
+          <p className="text-amber-200/40 text-sm">Choose your crew</p>
         </div>
 
-        {/* Setup card */}
-        <div className="bg-slate-900/80 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-xl font-bold text-white mb-6">Game Setup</h2>
-
+        {/* Setup panel */}
+        <div className="bg-slate-950/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 shadow-2xl shadow-black/40">
           {/* Player configurations */}
-          <div className="space-y-4 mb-6">
+          <div className="space-y-5 mb-6">
             {players.map((config, index) => (
               <PlayerConfigRow
                 key={index}
@@ -281,7 +311,6 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
                 onChange={(c) => updatePlayer(index, c)}
                 onRemove={() => removePlayer(index)}
                 canRemove={canRemovePlayer}
-                usedCaptains={usedCaptains.filter(id => id !== config.captain?.id)}
               />
             ))}
           </div>
@@ -289,7 +318,7 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
           {/* Add player button */}
           {canAddPlayer && (
             <button
-              className="w-full py-2 border-2 border-dashed border-slate-600 rounded-lg text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-colors mb-6"
+              className="w-full py-3 border-2 border-dashed border-slate-600/50 rounded-xl text-slate-500 hover:border-amber-500/30 hover:text-slate-300 transition-colors mb-5"
               onClick={addPlayer}
             >
               + Add Player ({players.length}/4)
@@ -299,10 +328,10 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
           {/* Start button */}
           <button
             className={clsx(
-              'w-full py-4 rounded-lg font-bold text-lg transition-all',
+              'w-full py-4 rounded-xl font-bold text-lg transition-all',
               canStart
-                ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
-                : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+                ? 'bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500 hover:from-orange-400 hover:via-amber-400 hover:to-orange-400 text-slate-900 shadow-lg shadow-orange-500/30 border border-amber-400/30 hover:scale-[1.01]'
+                : 'bg-slate-800/50 text-slate-500 border border-slate-700/50 cursor-not-allowed',
             )}
             onClick={startGame}
             disabled={!canStart}
@@ -311,8 +340,8 @@ export function GameSetup({ onStartGame }: GameSetupProps) {
           </button>
         </div>
 
-        {/* Credits */}
-        <div className="text-center mt-6 text-xs text-slate-600">
+        {/* Info */}
+        <div className="text-center mt-4 text-xs text-slate-600">
           {humanCount > 0 && aiCount > 0
             ? `${humanCount} human vs ${aiCount} AI`
             : humanCount > 0

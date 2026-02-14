@@ -15,9 +15,6 @@ import type { Captain, AIStrategy, GameAction } from './types';
 // Main Menu Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Captain portrait IDs for the showcase row
-const CAPTAIN_IDS = ['Scrapper', 'Veteran', 'Tycoon', 'Mercenary', 'Navigator', 'Ghost', 'Broker', 'Engineer', 'Infiltrator'];
-
 function MainMenu({
   onNewGame,
   onOnlinePlay,
@@ -47,18 +44,6 @@ function MainMenu({
           </h2>
           <p className="text-amber-200/60 mt-4 text-lg">A Competitive Spacefaring Deck-Builder</p>
           <p className="text-amber-300/30 mt-2 text-sm">Digital Playtest Edition</p>
-        </div>
-
-        {/* Captain portraits row */}
-        <div className="flex items-center justify-center gap-2 mb-8">
-          {CAPTAIN_IDS.map((id) => (
-            <img
-              key={id}
-              src={`/cards/captain/${id}.png`}
-              alt={id}
-              className="w-10 h-10 rounded-lg object-cover border-2 border-amber-600/40 shadow-lg shadow-black/40 hover:border-amber-400 hover:scale-110 transition-all"
-            />
-          ))}
         </div>
 
         {/* Buttons */}
