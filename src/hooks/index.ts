@@ -21,3 +21,5 @@ export {
   useMyPlayer,
   useCanStartGame,
 } from './useMultiplayer';
+
+export { useUIScaleStore } from './useUIScaleStore';

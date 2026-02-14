@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import type { Player, SystemType, CardInstance, MissionInstance, ActionCard } from '@/types';
 import { SYSTEM_CONFIG, MAX_POWER } from '@/data/constants';
@@ -136,7 +137,7 @@ interface ExpandedSystemPanelProps {
   onActivate?: (abilityIndex: number) => void;
 }
 
-// Hover preview component for installed cards - uses fixed position to escape overflow
+// Hover preview component for installed cards - portaled to body to escape sidebar transform
 function InstallationPreview({
   card,
   hoverPos,
@@ -144,7 +145,7 @@ function InstallationPreview({
   card: CardInstance;
   hoverPos: { x: number; y: number };
 }) {
-  return (
+  return createPortal(
     <div
       className="fixed pointer-events-none"
       style={{
@@ -155,11 +156,12 @@ function InstallationPreview({
       }}
     >
       <Card card={card} size="normal" />
-    </div>
+    </div>,
+    document.body
   );
 }
 
-// Hover preview for gear (mission) cards - uses fixed position to escape overflow
+// Hover preview for gear (mission) cards - portaled to body to escape sidebar transform
 function GearPreview({
   mission,
   hoverPos,
@@ -167,7 +169,7 @@ function GearPreview({
   mission: MissionInstance;
   hoverPos: { x: number; y: number };
 }) {
-  return (
+  return createPortal(
     <div
       className="fixed pointer-events-none"
       style={{
@@ -178,7 +180,8 @@ function GearPreview({
       }}
     >
       <MissionCard mission={mission} size="normal" />
-    </div>
+    </div>,
+    document.body
   );
 }
 

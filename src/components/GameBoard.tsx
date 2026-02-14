@@ -4,7 +4,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { clsx } from 'clsx';
+import { createPortal } from 'react-dom';
 import { useGameStore, useCurrentPlayer, usePlayers, useIsGameOver, useWinner, useMultiplayer } from '@/hooks';
+import { useUIScaleStore } from '@/hooks/useUIScaleStore';
 import { SpaceTrack } from './SpaceTrack';
 import { ExpandedSystemPanel } from './PlayerStatsBar';
 import { HandDisplay } from './HandDisplay';
@@ -12,6 +14,8 @@ import { OpponentBar } from './OpponentBar';
 import { PyramidMarket } from './PyramidMarket';
 import { MarketOverlay } from './MarketDisplay';
 import { Card, MissionCard, CardBack } from './Card';
+import { ScaledSection } from './ScaledSection';
+import { ScaleSettingsPanel } from './ScaleSettingsPanel';
 import type { SystemType, MissionInstance, GameAction } from '@/types';
 import { useState, useCallback, useEffect } from 'react';
 
@@ -22,6 +26,8 @@ import { useState, useCallback, useEffect } from 'react';
 function GameHeader() {
   const gameState = useGameStore((s) => s.gameState);
   const currentPlayer = useCurrentPlayer();
+  const toggleScalePanel = useUIScaleStore((s) => s.toggleScalePanel);
+  const showScalePanel = useUIScaleStore((s) => s.showScalePanel);
 
   if (!gameState || !currentPlayer) return null;
 
@@ -32,6 +38,18 @@ function GameHeader() {
           <span className="text-amber-500">RUST BUCKET</span>
           <span className="text-slate-400"> RISING</span>
         </h1>
+        <button
+          onClick={toggleScalePanel}
+          className={clsx(
+            'text-sm px-2 py-1 rounded transition-all',
+            showScalePanel
+              ? 'bg-amber-500/20 text-amber-400'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+          )}
+          title="UI Scale Settings"
+        >
+          ⚙️
+        </button>
       </div>
 
       <div className="flex items-center gap-4 text-sm">
@@ -91,8 +109,8 @@ function TrophyItem({ trophy, onView }: { trophy: MissionInstance; onView: () =>
       </div>
       <div className="text-purple-400 text-xs font-bold">+{trophy.fame}★</div>
 
-      {/* Hover preview - fixed position to escape overflow */}
-      {isHovering && (
+      {/* Hover preview - portaled to body to escape sidebar transform */}
+      {isHovering && createPortal(
         <div
           className="fixed pointer-events-none"
           style={{
@@ -103,7 +121,8 @@ function TrophyItem({ trophy, onView }: { trophy: MissionInstance; onView: () =>
           }}
         >
           <MissionCard mission={trophy} size="normal" />
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -142,8 +161,8 @@ function MissionItem({ mission, onView }: { mission: MissionInstance; onView: ()
       </div>
       <div className="text-xs font-bold">+{mission.fame}★</div>
 
-      {/* Hover preview - fixed position to escape overflow */}
-      {isHovering && (
+      {/* Hover preview - portaled to body to escape sidebar transform */}
+      {isHovering && createPortal(
         <div
           className="fixed pointer-events-none"
           style={{
@@ -154,7 +173,8 @@ function MissionItem({ mission, onView }: { mission: MissionInstance; onView: ()
           }}
         >
           <MissionCard mission={mission} size="normal" />
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -959,6 +979,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   const players = usePlayers();
   const isGameOver = useIsGameOver();
   const showMarket = useGameStore((s) => s.showMarket);
+  const scales = useUIScaleStore((s) => s.scales);
   const toggleMarket = useGameStore((s) => s.toggleMarket);
   const aiSpeed = useGameStore((s) => s.aiSpeed);
   const setAISpeed = useGameStore((s) => s.setAISpeed);
@@ -1100,7 +1121,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {/* Top row: Hand (left) | Market (center-right) */}
           <div className="flex-none flex items-start px-4 py-2">
             {/* Hand Cards - fanned like cards held in hand */}
-            <div className="flex-none ml-2">
+            <ScaledSection scale={scales.hand} fixedWidth={600} fixedHeight={340} origin="top left" className="flex-none ml-2">
               <HandDisplay
                 cards={currentPlayer.hand}
                 player={currentPlayer}
@@ -1110,13 +1131,13 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 onViewCard={viewCard}
                 layout="horizontal"
               />
-            </div>
+            </ScaledSection>
 
             {/* Spacer to push market toward center-right but not to edge */}
             <div className="flex-1" />
 
             {/* Market Pyramid - positioned with generous margin from right edge */}
-            <div className="flex-none mr-32">
+            <ScaledSection scale={scales.market} origin="top right" className="flex-none mr-32">
               <PyramidMarket
                 marketStacks={gameState.marketStacks}
                 currentPlayer={currentPlayer}
@@ -1125,17 +1146,19 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 onViewCard={viewCard}
                 onRevealStack={revealMarketStack}
               />
-            </div>
+            </ScaledSection>
           </div>
 
           {/* Space Track with Missions - Slightly right of center */}
           <section className="flex-1 flex items-center justify-center px-4 pl-16">
-            <SpaceTrack
-              state={gameState}
-              currentPlayerId={currentPlayer.id}
-              onMove={move}
-              onViewMission={(tm) => viewMission(tm.mission)}
-            />
+            <ScaledSection scale={scales.spaceTrack} origin="center center">
+              <SpaceTrack
+                state={gameState}
+                currentPlayerId={currentPlayer.id}
+                onMove={move}
+                onViewMission={(tm) => viewMission(tm.mission)}
+              />
+            </ScaledSection>
           </section>
 
           {/* Deck, Played & Discard - Bottom left */}
@@ -1223,7 +1246,18 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
         </main>
 
         {/* RIGHT COLUMN - Player Systems & Info */}
-        <aside className="flex-none w-72 flex flex-col bg-slate-950/50 border-l border-amber-900/20 overflow-y-auto">
+        <aside
+          className="flex-none flex flex-col bg-slate-950/50 border-l border-amber-900/20 overflow-y-auto"
+          style={{ width: 288 * scales.sidebar }}
+        >
+          <div
+            style={{
+              transform: scales.sidebar !== 1 ? `scale(${scales.sidebar})` : undefined,
+              transformOrigin: 'top right',
+              width: 288,
+              willChange: scales.sidebar !== 1 ? 'transform' : undefined,
+            }}
+          >
           {/* Captain & Fame/Credits - Compact header */}
           <div className="flex-none p-3 border-b border-amber-900/20">
             <div className="flex items-center gap-3">
@@ -1334,6 +1368,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               <OpponentBar opponents={otherPlayers} layout="vertical" />
             </div>
           )}
+          </div>{/* end sidebar scale wrapper */}
         </aside>
       </div>
 
@@ -1371,6 +1406,9 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* Move other player modal */}
       <MoveOtherPlayerModal />
+
+      {/* UI Scale Settings Panel */}
+      <ScaleSettingsPanel />
     </div>
   );
 }
