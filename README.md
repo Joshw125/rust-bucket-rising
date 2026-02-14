@@ -1,134 +1,103 @@
 # Rust Bucket Rising - Digital Playtest Edition
 
-A competitive spacefaring deck-builder board game, now in digital form!
+A competitive spacefaring deck-builder board game for 2-4 players with real-time online multiplayer.
 
-## 🚀 Quick Start
+## Play Now
+
+| | URL |
+|--|-----|
+| **Game** | https://rust-bucket-rising-client.onrender.com |
+| **Server** | wss://rust-bucket-rising.onrender.com |
+
+> Free tier: server sleeps after ~15min idle, first reconnect takes ~30-50s to wake.
+
+## Local Development
 
 ```bash
-# Install dependencies
+# Client (React + Vite)
 npm install
+npm run dev          # http://localhost:5173
 
-# Start development server
-npm run dev
+# Server (WebSocket)
+cd server
+npm install
+npm run dev          # ws://localhost:3001
 
-# Build for production
-npm run build
+# Tests
+npx vitest run       # 70 tests
+
+# Production build
+npm run build        # outputs to dist/
 ```
 
-## 📁 Project Structure
+## Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| Frontend | React 18, TypeScript 5.3, Vite 5, Tailwind CSS, Zustand (Immer) |
+| Backend | Node.js, WebSocket (ws), UUID |
+| Testing | Vitest |
+| Hosting | Render (free tier) — Web Service (server) + Static Site (client) |
+
+## Project Structure
 
 ```
 rust-bucket-rising/
 ├── src/
-│   ├── types/           # TypeScript type definitions
-│   │   └── index.ts     # All game types
-│   ├── data/            # Game data (cards, missions, etc.)
-│   │   ├── constants.ts # Game constants & config
-│   │   ├── captains.ts  # Captain definitions
-│   │   ├── cards.ts     # All card data
-│   │   ├── missions.ts  # Mission definitions
-│   │   └── index.ts     # Re-exports
-│   ├── engine/          # Game logic
-│   │   └── GameEngine.ts # Core game engine (WIP)
-│   ├── components/      # React components (to build)
-│   ├── hooks/           # Custom React hooks (to build)
-│   ├── assets/          # Images (copy your PNGs here!)
-│   ├── App.tsx          # Main app component
-│   ├── main.tsx         # Entry point
-│   └── index.css        # Styles
-├── public/              # Static assets
-├── package.json
-├── tsconfig.json
-├── tailwind.config.js
-└── vite.config.ts
+│   ├── types/index.ts              # All game types
+│   ├── engine/
+│   │   ├── GameEngine.ts           # Core game logic (~2100 lines)
+│   │   ├── GameEngine.test.ts      # 70 tests
+│   │   ├── AIEngine.ts             # AI decision-making
+│   │   └── SimulationRunner.ts     # Batch balance testing
+│   ├── hooks/
+│   │   ├── useGameStore.ts         # Zustand store with Immer
+│   │   └── useMultiplayer.ts       # WebSocket multiplayer sync
+│   ├── data/
+│   │   ├── constants.ts            # Game settings, system configs
+│   │   ├── cards.ts                # All card definitions
+│   │   ├── captains.ts             # 9 captain definitions
+│   │   └── missions.ts             # 30 missions across 3 zones
+│   ├── components/                 # 14+ React components
+│   │   ├── GameBoard.tsx           # Main game screen + modals
+│   │   ├── OnlineLobby.tsx         # Multiplayer lobby
+│   │   └── ...
+│   └── App.tsx                     # Menu routing
+├── server/
+│   ├── src/index.ts                # WebSocket server + HTTP health check
+│   ├── render.yaml                 # Render deployment blueprint
+│   └── package.json
+├── public/cards/                   # 98 PNG card artworks
+├── .env.production                 # Production WebSocket URL
+└── development_checkpoint.md       # Detailed dev state for AI assistants
 ```
 
-## 🎮 Game Rules Summary
+## Game Overview
 
-### Systems (4 total, max 6 power each)
-- **Weapons (Red)**: 1⚡ hazard at location, 3⚡ hazard anywhere
-- **Computers (Teal)**: 1⚡ draw 1, 3⚡ draw 3 keep 1
-- **Engines (Orange)**: 1⚡ move 1 space
-- **Logistics (Yellow)**: 1⚡ +1 credit, 3⚡ trash card
+- **2-4 players** captain salvaged starships across 6 locations
+- **Deck-building**: buy cards from tiered markets (Stations 1/3/5)
+- **4 ship systems**: Weapons, Computers, Engines, Logistics (max 6 power each)
+- **Missions**: complete for Fame, first to 25 triggers endgame
+- **Hazards**: attack opponents to slow them down
+- **9 unique captains** with distinct abilities
 
-### Space Track
-- 6 locations in a row
-- Stations at locations 1, 3, 5 (markets)
-- Missions start face-down (except location 1)
+## Deployment
 
-### Victory
-- First to **25 Fame** triggers end game
-- Complete missions to gain Fame
-- Finish the round, highest Fame wins
+Both services deploy from the `main` branch of https://github.com/Joshw125/rust-bucket-rising
 
-## 🛠️ Development with Claude Code
+**Server** (Render Web Service):
+- Root directory: `server/`
+- Build: `npm install && npm run build`
+- Start: `node dist/index.js`
+- Env: `PORT=10000`, `NODE_ENV=production`
 
-This project is set up to be developed with Claude Code. Key areas to build:
+**Client** (Render Static Site):
+- Build: `npm install && npm run build`
+- Publish: `dist/`
+- Env: `VITE_WS_URL=wss://rust-bucket-rising.onrender.com`
 
-1. **Complete GameEngine** (`src/engine/GameEngine.ts`)
-   - Player turn logic
-   - Card effect resolution
-   - Mission completion
-   - Hazard handling
-
-2. **UI Components** (`src/components/`)
-   - Card.tsx - Card display
-   - PlayerBoard.tsx - Player area
-   - SpaceTrack.tsx - Game board
-   - MarketBrowser.tsx - Card shop
-   - PowerAllocationModal.tsx - Power choices
-
-3. **AI Player** (`src/engine/AIPlayer.ts`)
-   - Decision making
-   - Strategy implementations
-
-4. **Simulation Engine** (`src/engine/Simulator.ts`)
-   - Batch game running
-   - Balance analysis
-
-## 🎨 Adding Card Art
-
-Copy your card PNG files to `src/assets/cards/` and update the card data to reference them:
-
-```typescript
-// In cards.ts
-{
-  id: 'weapons-core',
-  title: 'Weapons Core',
-  image: 'Weapons_Core.png', // Add this
-  // ...
-}
-```
-
-## 📦 Dependencies
-
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **Zustand** - State management
-- **Framer Motion** - Animations
-- **Lucide React** - Icons
-
-## 🎯 What's Already Done
-
-✅ Complete TypeScript type system
-✅ All 9 captains with abilities
-✅ All starting cards (10 per player)
-✅ All Tier 1 cards (Station 1)
-✅ All Tier 2 cards (Station 3)
-✅ All Tier 3 cards (Station 5)
-✅ All hazard cards
-✅ All missions (Near/Mid/Deep)
-✅ System configuration with abilities
-✅ Game constants and balance values
-✅ Tailwind theme with game colors
-✅ Project structure
-
-## 📝 License
-
-This is a playtest version for personal use.
+Push to `main` and manually deploy from Render dashboard.
 
 ---
 
-Built with ❤️ for tabletop gaming
+Built with Claude Code
