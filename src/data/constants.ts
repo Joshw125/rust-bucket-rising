@@ -8,7 +8,7 @@ import type { SystemConfig, SystemType } from '@/types';
 // Game Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const VICTORY_THRESHOLD = 20;
+export const VICTORY_THRESHOLD = 25;
 export const HAND_SIZE = 5;
 export const MAX_POWER = 6;
 export const STARTING_POWER = 1;

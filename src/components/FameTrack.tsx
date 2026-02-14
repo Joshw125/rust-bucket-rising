@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RUST BUCKET RISING - Fame Track
-// Horizontal scoreboard showing all players' fame with colored star tokens
+// Horizontal 1-25 numbered track with colored player tokens showing position
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { clsx } from 'clsx';
-import { motion } from 'framer-motion';
+import { useRef, useEffect } from 'react';
 import { PLAYER_COLORS } from './SpaceTrack';
 import { VICTORY_THRESHOLD } from '@/data/constants';
 import type { Player } from '@/types';
@@ -15,65 +15,126 @@ interface FameTrackProps {
 }
 
 export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
-  // Sort by fame descending for display (but keep original index for colors)
-  const sortedPlayers = players
-    .map((p, i) => ({ player: p, index: i }))
-    .sort((a, b) => b.player.fame - a.player.fame);
+  const trackRef = useRef<HTMLDivElement>(null);
 
-  const leadingFame = sortedPlayers[0]?.player.fame ?? 0;
+  // Build a map of fame value → players at that position
+  const positionMap = new Map<number, Array<{ player: Player; index: number }>>();
+  players.forEach((player, index) => {
+    const fame = player.fame;
+    if (!positionMap.has(fame)) positionMap.set(fame, []);
+    positionMap.get(fame)!.push({ player, index });
+  });
+
+  const leadingFame = Math.max(...players.map(p => p.fame));
+
+  // Auto-scroll to keep the leading player visible
+  useEffect(() => {
+    if (trackRef.current && leadingFame > 5) {
+      const cell = trackRef.current.querySelector(`[data-cell="${leadingFame}"]`);
+      if (cell) {
+        cell.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [leadingFame]);
+
+  // Generate cells 0 to VICTORY_THRESHOLD
+  const cells = Array.from({ length: VICTORY_THRESHOLD + 1 }, (_, i) => i);
 
   return (
-    <div className="flex items-center justify-center gap-3 px-4 py-1.5 bg-slate-950/50 border-b border-amber-900/20">
-      {sortedPlayers.map(({ player, index }) => {
-        const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
-        const isCurrentTurn = index === currentPlayerIndex;
-        const isLeader = player.fame === leadingFame && player.fame > 0;
-
-        return (
-          <div
-            key={player.name}
-            className={clsx(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all',
-              isCurrentTurn
-                ? 'bg-slate-800/80 ring-1 ring-amber-500/40'
-                : 'bg-slate-900/40',
-            )}
-          >
-            {/* Colored star token */}
-            <div className={clsx(
-              'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold',
-              color.bg,
-              isLeader && 'ring-2 ring-amber-400 shadow-lg shadow-amber-500/30',
-            )}>
-              <span className="text-white drop-shadow">★</span>
+    <div className="bg-slate-950/60 border-b border-amber-900/20 px-2 py-1">
+      {/* Player legend */}
+      <div className="flex items-center gap-3 mb-1 px-1">
+        {players.map((player, index) => {
+          const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+          const isCurrentTurn = index === currentPlayerIndex;
+          return (
+            <div key={player.name} className="flex items-center gap-1">
+              <div className={clsx(
+                'w-3 h-3 rounded-full',
+                color.bg,
+                isCurrentTurn && 'ring-1 ring-amber-400',
+              )} />
+              <span className={clsx(
+                'text-[10px] font-semibold',
+                color.text,
+              )}>
+                {player.name}
+              </span>
+              <span className="text-amber-400 text-[10px] font-bold">
+                {player.fame}
+              </span>
             </div>
+          );
+        })}
+        <div className="ml-auto text-[10px] text-slate-500">
+          ★ {VICTORY_THRESHOLD} to win
+        </div>
+      </div>
 
-            {/* Player name (colored) */}
-            <span className={clsx(
-              'text-xs font-semibold truncate max-w-[80px]',
-              color.text,
-            )}>
-              {player.name}
-            </span>
+      {/* Scrollable track */}
+      <div
+        ref={trackRef}
+        className="flex gap-0 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent pb-0.5"
+      >
+        {cells.map((cellValue) => {
+          const playersHere = positionMap.get(cellValue) ?? [];
+          const isFinishLine = cellValue === VICTORY_THRESHOLD;
+          const isZero = cellValue === 0;
+          const isMilestone = cellValue > 0 && cellValue % 5 === 0;
 
-            {/* Fame counter */}
-            <motion.span
-              key={`fame-track-${index}-${player.fame}`}
-              initial={{ scale: 1.4 }}
-              animate={{ scale: 1 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              className="text-amber-400 font-bold text-sm min-w-[16px] text-center"
+          return (
+            <div
+              key={cellValue}
+              data-cell={cellValue}
+              className={clsx(
+                'flex-none flex flex-col items-center relative',
+                'border-r border-slate-800/60',
+                isFinishLine && 'border-r-0',
+              )}
+              style={{ width: playersHere.length > 2 ? 36 : 28, minWidth: 28 }}
             >
-              {player.fame}
-            </motion.span>
-          </div>
-        );
-      })}
+              {/* Player tokens */}
+              <div className="h-5 flex items-end justify-center gap-0.5 mb-0.5">
+                {playersHere.map(({ player, index }) => {
+                  const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+                  const isCurrentTurn = index === currentPlayerIndex;
+                  const isLeader = player.fame === leadingFame && player.fame > 0;
+                  return (
+                    <div
+                      key={player.name}
+                      className={clsx(
+                        'w-3.5 h-3.5 rounded-full flex items-center justify-center',
+                        color.bg,
+                        isCurrentTurn && 'ring-1 ring-amber-400',
+                        isLeader && 'ring-1 ring-amber-400 shadow-sm shadow-amber-400/50',
+                      )}
+                      title={`${player.name}: ${player.fame} Fame`}
+                    >
+                      <span className="text-[7px] text-white font-bold drop-shadow">
+                        {player.name[0]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
 
-      {/* Victory goal */}
-      <div className="flex items-center gap-1 ml-2 text-slate-600 text-[10px]">
-        <span className="text-amber-600">★</span>
-        <span>{VICTORY_THRESHOLD}</span>
+              {/* Cell background and number */}
+              <div className={clsx(
+                'w-full h-4 flex items-center justify-center text-[9px] font-semibold rounded-sm',
+                isFinishLine
+                  ? 'bg-amber-700/40 text-amber-300'
+                  : isMilestone
+                    ? 'bg-slate-800/60 text-slate-400'
+                    : isZero
+                      ? 'bg-slate-900/40 text-slate-600'
+                      : 'bg-slate-900/30 text-slate-600',
+                playersHere.length > 0 && !isFinishLine && 'bg-slate-800/50',
+              )}>
+                {cellValue}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
