@@ -9,7 +9,6 @@ server/dist/
 # Environment files
 .env
 .env.local
-.env.production
 
 # IDE
 .vscode/
