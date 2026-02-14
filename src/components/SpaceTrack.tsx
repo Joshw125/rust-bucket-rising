@@ -24,11 +24,11 @@ export interface SpaceTrackProps {
 // Player Colors
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PLAYER_COLORS = [
-  { bg: 'bg-purple-500', ring: 'ring-purple-400' },
-  { bg: 'bg-orange-500', ring: 'ring-orange-400' },
-  { bg: 'bg-cyan-400', ring: 'ring-cyan-300' },
-  { bg: 'bg-pink-400', ring: 'ring-pink-300' },
+export const PLAYER_COLORS = [
+  { bg: 'bg-purple-500', ring: 'ring-purple-400', text: 'text-purple-400', hex: '#a855f7' },
+  { bg: 'bg-orange-500', ring: 'ring-orange-400', text: 'text-orange-400', hex: '#fb923c' },
+  { bg: 'bg-cyan-400', ring: 'ring-cyan-300', text: 'text-cyan-300', hex: '#67e8f9' },
+  { bg: 'bg-pink-400', ring: 'ring-pink-300', text: 'text-pink-300', hex: '#f9a8d4' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

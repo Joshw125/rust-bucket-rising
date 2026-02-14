@@ -14,10 +14,12 @@ export type AnimationEventData =
   | { type: 'card-play'; card: CardInstance; fromRect: DOMRect; target: 'played' | 'discard' }
   | { type: 'card-install'; card: CardInstance; fromRect: DOMRect; targetSystem: SystemType }
   | { type: 'card-trash'; card: CardInstance; fromRect: DOMRect }
+  | { type: 'card-buy'; card: CardInstance; fromRect: DOMRect }
   | { type: 'credits-change'; delta: number }
   | { type: 'fame-change'; delta: number }
   | { type: 'hazard-reveal' }
-  | { type: 'mission-complete' };
+  | { type: 'mission-complete' }
+  | { type: 'turn-start'; playerName: string; playerIndex: number };
 
 export type AnimationEvent = AnimationEventData & { id: string };
 

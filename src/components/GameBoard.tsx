@@ -23,6 +23,9 @@ import { ScaleSettingsPanel } from './ScaleSettingsPanel';
 import { MobileTabBar } from './MobileTabBar';
 import { MobileActionBar } from './MobileActionBar';
 import { AnimationOverlay } from './AnimationOverlay';
+import { FameTrack } from './FameTrack';
+import { ActionButtonWithTooltip } from './ActionTooltip';
+import { PLAYER_COLORS } from './SpaceTrack';
 import type { SystemType, MissionInstance, GameAction, CardInstance } from '@/types';
 import { useState, useCallback, useEffect, useRef } from 'react';
 
@@ -37,6 +40,8 @@ function GameHeader() {
   const showScalePanel = useUIScaleStore((s) => s.showScalePanel);
 
   if (!gameState || !currentPlayer) return null;
+
+  const playerColor = PLAYER_COLORS[gameState.currentPlayerIndex % PLAYER_COLORS.length];
 
   return (
     <div className="flex items-center justify-between px-4 py-2">
@@ -80,8 +85,8 @@ function GameHeader() {
         )}
 
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span className="text-amber-400 font-semibold">{currentPlayer.name}'s Turn</span>
+          <span className={clsx('w-2 h-2 rounded-full animate-pulse', playerColor.bg)} />
+          <span className={clsx('font-semibold', playerColor.text)}>{currentPlayer.name}'s Turn</span>
         </div>
       </div>
     </div>
@@ -233,28 +238,26 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
   const missionRevealed = trackMission?.revealed;
   const meetsMissionRequirements = storeCanCompleteMission();
 
-  // Build descriptive tooltip for mission button
-  const getMissionTooltip = (): string => {
-    if (!isMyTurn) return 'Wait for your turn';
-    if (!trackMission || !missionRevealed) return 'No mission at this location';
-    // Check hazards blocking
+  // Build descriptive tooltip lines for mission button
+  const getMissionTooltipLines = (): string[] => {
+    if (!isMyTurn) return ['Wait for your turn'];
+    if (!trackMission || !missionRevealed) return ['No mission at this location'];
     const hasCorruptedNav = currentPlayer.hand.some(c => c.type === 'hazard' && c.id === 'corrupted-nav-chip');
-    if (hasCorruptedNav) return 'Blocked by Corrupted Nav Chip hazard!';
+    if (hasCorruptedNav) return ['Blocked by Corrupted Nav Chip!'];
     const mission = trackMission.mission;
     const reqs = mission.requirements;
-    const parts: string[] = [];
+    const lines: string[] = [];
     for (const sys of ['weapons', 'computers', 'engines', 'logistics'] as const) {
       const needed = (reqs[sys] ?? 0) - currentPlayer.missionDiscount;
       if (needed > 0) {
         const have = currentPlayer.currentPower[sys];
         const met = have >= needed;
-        parts.push(`${sys}: ${have}/${needed}${met ? ' \u2713' : ' \u2717'}`);
+        lines.push(`${sys[0].toUpperCase() + sys.slice(1)}: ${have}/${needed} ${met ? '\u2713' : '\u2717'}`);
       }
     }
     const hasWarrant = currentPlayer.hand.some(c => c.type === 'hazard' && c.id === 'warrant-issued');
-    if (hasWarrant) parts.push(`Credits: ${currentPlayer.credits}/2 (warrant)`);
-    if (meetsMissionRequirements) return `Ready! ${parts.join(', ')}`;
-    return `Need: ${parts.join(', ')}`;
+    if (hasWarrant) lines.push(`Credits: ${currentPlayer.credits}/2 (warrant)`);
+    return lines;
   };
 
   // Check if player can move
@@ -266,11 +269,36 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
     ? `${currentPlayer.movesRemaining} Free`
     : `${currentPlayer.currentPower.engines}⚡`;
 
+  // Tooltip lines for disabled move buttons
+  const getMoveTooltipLines = (dir: 'left' | 'right'): string[] => {
+    if (!isMyTurn) return ['Wait for your turn'];
+    const lines: string[] = [];
+    if (dir === 'left' && currentPlayer.location <= 1) lines.push('Already at location 1');
+    if (dir === 'right' && currentPlayer.location >= 6) lines.push('Already at location 6');
+    if (currentPlayer.movesRemaining <= 0 && currentPlayer.currentPower.engines < 1) {
+      lines.push('No free moves remaining');
+      lines.push('Need 1 Engine power to move');
+    }
+    return lines;
+  };
+
+  // Tooltip for restart button
+  const getRestartTooltipLines = (): string[] => {
+    if (!isMyTurn) return ['Wait for your turn'];
+    if (!canRestart) return ['Info revealed this turn', 'Cannot undo'];
+    return [];
+  };
+
+  const missionDisabled = !isMyTurn || !meetsMissionRequirements;
+  const missionTooltipLines = missionDisabled ? getMissionTooltipLines() : [];
+
   return (
     <div className="action-bar">
       {/* Movement */}
       <div className="flex items-center gap-2">
-        <button
+        <ActionButtonWithTooltip
+          disabled={!canMoveLeft}
+          tooltipLines={!canMoveLeft ? getMoveTooltipLines('left') : []}
           className={clsx(
             'px-4 py-2 rounded-lg font-semibold transition-all',
             canMoveLeft
@@ -278,15 +306,16 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
               : 'bg-slate-700/50 text-slate-500 cursor-not-allowed',
           )}
           onClick={() => move(-1)}
-          disabled={!canMoveLeft}
         >
           ←
-        </button>
+        </ActionButtonWithTooltip>
         <div className="text-center px-2">
           <div className="text-amber-400 font-bold">📍 {currentPlayer.location}</div>
           <div className="text-slate-500 text-[10px]">{moveCostText}</div>
         </div>
-        <button
+        <ActionButtonWithTooltip
+          disabled={!canMoveRight}
+          tooltipLines={!canMoveRight ? getMoveTooltipLines('right') : []}
           className={clsx(
             'px-4 py-2 rounded-lg font-semibold transition-all',
             canMoveRight
@@ -294,16 +323,17 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
               : 'bg-slate-700/50 text-slate-500 cursor-not-allowed',
           )}
           onClick={() => move(1)}
-          disabled={!canMoveRight}
         >
           →
-        </button>
+        </ActionButtonWithTooltip>
       </div>
 
       <div className="action-bar-divider" />
 
       {/* Mission */}
-      <button
+      <ActionButtonWithTooltip
+        disabled={missionDisabled}
+        tooltipLines={missionTooltipLines}
         className={clsx(
           'px-4 py-2 rounded-lg font-semibold transition-all',
           isMyTurn && meetsMissionRequirements
@@ -313,11 +343,9 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
               : 'bg-slate-700/50 text-slate-500 cursor-not-allowed',
         )}
         onClick={completeMission}
-        disabled={!isMyTurn || !meetsMissionRequirements}
-        title={getMissionTooltip()}
       >
         🎯 Complete Mission
-      </button>
+      </ActionButtonWithTooltip>
 
       {/* Market */}
       <button
@@ -335,7 +363,9 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
       <div className="action-bar-divider" />
 
       {/* Restart Turn */}
-      <button
+      <ActionButtonWithTooltip
+        disabled={!isMyTurn || !canRestart}
+        tooltipLines={getRestartTooltipLines()}
         className={clsx(
           'px-3 py-2 rounded-lg font-semibold transition-all text-sm flex items-center gap-1',
           isMyTurn && canRestart
@@ -343,14 +373,14 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
             : 'bg-slate-800 text-slate-600 cursor-not-allowed',
         )}
         onClick={restartTurn}
-        disabled={!isMyTurn || !canRestart}
-        title={!isMyTurn ? 'Wait for your turn' : canRestart ? 'Restart your turn (undo all actions)' : 'Cannot restart - information revealed'}
       >
         🔄 {canRestart ? 'Undo' : ''}
-      </button>
+      </ActionButtonWithTooltip>
 
       {/* End Turn */}
-      <button
+      <ActionButtonWithTooltip
+        disabled={!isMyTurn}
+        tooltipLines={!isMyTurn ? ['Wait for your turn'] : []}
         className={clsx(
           'px-6 py-2 rounded-lg font-bold transition-all shadow-lg',
           isMyTurn
@@ -358,10 +388,9 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
             : 'bg-slate-700 text-slate-500 cursor-not-allowed shadow-none',
         )}
         onClick={endTurn}
-        disabled={!isMyTurn}
       >
         End Turn
-      </button>
+      </ActionButtonWithTooltip>
     </div>
   );
 }
@@ -1056,6 +1085,21 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     animSetRef('discardPile', discardPileRef.current);
   }, [animSetRef]);
 
+  // "Your Turn!" popup on turn start
+  const prevTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!gameState || !currentPlayer) return;
+    const turnKey = `${gameState.currentPlayerIndex}-${gameState.turn}`;
+    if (prevTurnRef.current !== null && prevTurnRef.current !== turnKey && gameState.phase === 'action') {
+      animEmit({
+        type: 'turn-start',
+        playerName: currentPlayer.name,
+        playerIndex: gameState.currentPlayerIndex,
+      });
+    }
+    prevTurnRef.current = turnKey;
+  }, [gameState?.currentPlayerIndex, gameState?.turn, gameState?.phase, currentPlayer, animEmit]);
+
   // Wrapped actions that check turn ownership
   const playCardWithChoice = useCallback((card: CardInstance, rect?: DOMRect) => {
     if (!isMyTurn) return;
@@ -1083,8 +1127,18 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
   const buyCard = useCallback((station: 1 | 3 | 5, stackIndex: number, cardIndex?: number) => {
     if (!isMyTurn) return false;
-    return storeBuyCard(station, stackIndex, cardIndex);
-  }, [isMyTurn, storeBuyCard]);
+    // Capture card data for ghost animation before dispatch removes it
+    const stackInfo = gameState?.marketStacks[station]?.[stackIndex];
+    const idx = cardIndex ?? 0;
+    const card = stackInfo?.cards[idx];
+    const result = storeBuyCard(station, stackIndex, cardIndex);
+    if (result && card) {
+      // Animate ghost card from center of screen to discard pile
+      const fromRect = new DOMRect(window.innerWidth / 2 - 40, window.innerHeight / 3, 80, 112);
+      animEmit({ type: 'card-buy', card, fromRect });
+    }
+    return result;
+  }, [isMyTurn, storeBuyCard, gameState, animEmit]);
 
   const buyAndInstall = useCallback((station: 1 | 3 | 5, stackIndex: number, targetSystem: SystemType, cardIndex?: number) => {
     if (!isMyTurn) return false;
@@ -1182,6 +1236,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 onClearHazard={(card) => clearHazard(card.instanceId)}
                 onViewCard={viewCard}
                 layout="vertical"
+                isMyTurn={isMyTurn}
               />
 
               {/* Deck / Played / Discard - compact row */}
@@ -1307,7 +1362,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {otherPlayers.length > 0 && (
                 <div className="border-t border-amber-900/20 pt-3">
                   <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-                  <OpponentBar opponents={otherPlayers} layout="vertical" />
+                  <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" />
                 </div>
               )}
             </div>
@@ -1395,6 +1450,14 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             <GameHeader />
           </header>
 
+          {/* Fame Track */}
+          {gameState && (
+            <FameTrack
+              players={gameState.players}
+              currentPlayerIndex={gameState.currentPlayerIndex}
+            />
+          )}
+
           {/* Top row: Hand (left) | Market (center-right) */}
           <div className="flex-none flex items-start px-4 py-2">
             {/* Hand Cards - fanned like cards held in hand */}
@@ -1407,6 +1470,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 onClearHazard={(card) => clearHazard(card.instanceId)}
                 onViewCard={viewCard}
                 layout="horizontal"
+                isMyTurn={isMyTurn}
               />
             </ScaledSection>
 
@@ -1658,7 +1722,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {otherPlayers.length > 0 && (
             <div className="flex-none p-3 border-t border-amber-900/20">
               <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-              <OpponentBar opponents={otherPlayers} layout="vertical" />
+              <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" />
             </div>
           )}
           </div>{/* end sidebar scale wrapper */}

@@ -168,19 +168,19 @@ describe('Player Creation', () => {
       const scrapper = getCaptainById('scrapper')!;
       const player = createPlayer(0, 'Test', scrapper);
 
-      // Scrapper starts with +3 logistics
-      expect(player.startingPower.logistics).toBe(STARTING_POWER + 3);
+      // Scrapper starts with +2 logistics
+      expect(player.startingPower.logistics).toBe(STARTING_POWER + 2);
     });
 
-    it('should apply captain starting penalties (Ghost)', () => {
+    it('should apply Ghost captain (no start penalty)', () => {
       const ghost = getCaptainById('ghost')!;
       const player = createPlayer(0, 'Test', ghost);
 
-      // Ghost starts with -1 to all systems
-      expect(player.startingPower.weapons).toBe(0);
-      expect(player.startingPower.computers).toBe(0);
-      expect(player.startingPower.engines).toBe(0);
-      expect(player.startingPower.logistics).toBe(0);
+      // Ghost has no start penalty — just base starting power
+      expect(player.startingPower.weapons).toBe(STARTING_POWER);
+      expect(player.startingPower.computers).toBe(STARTING_POWER);
+      expect(player.startingPower.engines).toBe(STARTING_POWER);
+      expect(player.startingPower.logistics).toBe(STARTING_POWER);
     });
 
     it('should apply Engineer bonus to computers and logistics', () => {

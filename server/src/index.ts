@@ -180,6 +180,31 @@ function handleJoinRoom(ws: WebSocket, client: ConnectedClient, roomCode: string
     return;
   }
 
+  // Allow rejoin if the game is in progress and a disconnected player matches by name
+  if (room.status === 'playing') {
+    const disconnectedPlayer = room.players.find(
+      p => !p.isConnected && p.name.toLowerCase() === playerName.toLowerCase()
+    );
+    if (disconnectedPlayer) {
+      // Rejoin: reassign the socket to the disconnected player
+      disconnectedPlayer.isConnected = true;
+      const oldPlayerId = client.playerId;
+      client.playerId = disconnectedPlayer.id;
+      client.roomId = room.id;
+      playerToRoom.delete(oldPlayerId);
+      playerToRoom.set(disconnectedPlayer.id, room.id);
+
+      // Send full room state to the rejoining player
+      send(ws, { type: 'ROOM_JOINED', room, playerId: disconnectedPlayer.id });
+      // Notify others
+      broadcast(room, { type: 'ROOM_UPDATE', room }, disconnectedPlayer.id);
+      console.log(`Player "${playerName}" rejoined room ${roomCode}`);
+      return;
+    }
+    send(ws, { type: 'ERROR', message: 'This game has already started.' });
+    return;
+  }
+
   if (room.status !== 'lobby') {
     send(ws, { type: 'ERROR', message: 'This game has already started.' });
     return;

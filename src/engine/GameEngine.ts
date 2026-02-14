@@ -581,8 +581,7 @@ export class GameEngine {
         // Ghost captain ability: draw a card and gain a credit when revealing hazard
         if (player.captain.ability.trigger === 'onDrawHazard') {
           this.drawCards(player, 1);
-          player.credits += 1;
-          this.log(`${player.name}'s Ghost ability: +1 card, +1 credit`, 'action');
+          this.log(`${player.name}'s Ghost ability: +1 card`, 'action');
         }
       }
     }
@@ -596,8 +595,12 @@ export class GameEngine {
       this.log(`${player.name}'s Tycoon ability: +1 Credit`, 'action');
     } else if (player.captain.ability.turnStart === 'powerToHighest') {
       const highest = getHighestSystem(player.currentPower);
-      player.currentPower[highest] = Math.min(MAX_POWER, player.currentPower[highest] + 1);
-      this.log(`${player.name}'s Veteran ability: +1 ${highest} power`, 'action');
+      if (player.currentPower[highest] <= 2) {
+        player.currentPower[highest] = Math.min(MAX_POWER, player.currentPower[highest] + 1);
+        this.log(`${player.name}'s Veteran ability: +1 ${highest} power`, 'action');
+      } else {
+        this.log(`${player.name}'s Veteran ability: skipped (${highest} already at ${player.currentPower[highest]})`, 'info');
+      }
     }
 
     // Navigator free move
@@ -1580,12 +1583,18 @@ export class GameEngine {
     return this.state.trackMissions[location] ?? null;
   }
 
-  canCompleteMission(player: Player): boolean {
+  canCompleteMission(player: Player, verbose = false): boolean {
     const trackMission = this.getMissionAtLocation(player.location);
-    if (!trackMission || !trackMission.revealed) return false;
+    if (!trackMission || !trackMission.revealed) {
+      if (verbose) this.log(`Mission check: No revealed mission at location ${player.location}`, 'info');
+      return false;
+    }
 
     // Check for Corrupted Nav Chip hazard
-    if (this.playerHasActiveHazard(player, 'corrupted-nav-chip')) return false;
+    if (this.playerHasActiveHazard(player, 'corrupted-nav-chip')) {
+      if (verbose) this.log(`Mission check: Blocked by Corrupted Nav Chip in hand`, 'info');
+      return false;
+    }
 
     const mission = trackMission.mission;
     const requirements = mission.requirements;
@@ -1594,13 +1603,17 @@ export class GameEngine {
     for (const system of SYSTEMS) {
       const required = (requirements[system] ?? 0) - player.missionDiscount;
       if (required > 0 && player.currentPower[system] < required) {
+        if (verbose) this.log(`Mission check: Need ${required} ${system} power, have ${player.currentPower[system]}`, 'info');
         return false;
       }
     }
 
     // Check for Warrant Issued hazard (missions cost +2 credits)
     if (this.playerHasActiveHazard(player, 'warrant-issued')) {
-      if (player.credits < 2) return false;
+      if (player.credits < 2) {
+        if (verbose) this.log(`Mission check: Warrant Issued requires 2 credits, have ${player.credits}`, 'info');
+        return false;
+      }
     }
 
     return true;

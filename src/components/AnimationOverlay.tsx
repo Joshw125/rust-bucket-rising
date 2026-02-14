@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAnimationStore } from '@/hooks/useAnimationStore';
+import { PLAYER_COLORS } from './SpaceTrack';
 import { Card } from './Card';
 import type { AnimationEvent } from '@/hooks/useAnimationStore';
 
@@ -14,7 +15,7 @@ import type { AnimationEvent } from '@/hooks/useAnimationStore';
 // Ghost Card Component (flies from source to target)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GhostCard({ event }: { event: AnimationEvent & { type: 'card-play' | 'card-install' | 'card-trash' } }) {
+function GhostCard({ event }: { event: AnimationEvent & { type: 'card-play' | 'card-install' | 'card-trash' | 'card-buy' } }) {
   const dismiss = useAnimationStore((s) => s.dismiss);
   const getRefRect = useAnimationStore((s) => s.getRefRect);
 
@@ -29,11 +30,17 @@ function GhostCard({ event }: { event: AnimationEvent & { type: 'card-play' | 'c
     targetRect = getRefRect('playedPile');
   } else if (event.type === 'card-trash') {
     targetRect = getRefRect('discardPile');
+  } else if (event.type === 'card-buy') {
+    // Buy: fly from market to discard pile
+    targetRect = getRefRect('discardPile');
   }
 
   // Fallback: animate in place if no target ref
   const toX = targetRect ? targetRect.left + targetRect.width / 2 - from.width / 2 : from.left;
   const toY = targetRect ? targetRect.top : from.top + 100;
+
+  const isTrash = event.type === 'card-trash';
+  const isBuy = event.type === 'card-buy';
 
   return (
     <motion.div
@@ -51,12 +58,12 @@ function GhostCard({ event }: { event: AnimationEvent & { type: 'card-play' | 'c
       animate={{
         left: toX,
         top: toY,
-        scale: event.type === 'card-trash' ? 0.3 : 0.4,
-        opacity: event.type === 'card-trash' ? 0 : 0.7,
-        rotate: event.type === 'card-trash' ? 15 : 0,
+        scale: isTrash ? 0.3 : 0.4,
+        opacity: isTrash ? 0 : 0.7,
+        rotate: isTrash ? 15 : isBuy ? -5 : 0,
       }}
       transition={{
-        duration: 0.35,
+        duration: isBuy ? 0.4 : 0.35,
         ease: 'easeInOut',
       }}
       onAnimationComplete={() => dismiss(event.id)}
@@ -148,6 +155,54 @@ function HazardFlash({ event }: { event: AnimationEvent & { type: 'hazard-reveal
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Turn Start Banner ("Your Turn!" popup)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TurnStartBanner({ event }: { event: AnimationEvent & { type: 'turn-start' } }) {
+  const dismiss = useAnimationStore((s) => s.dismiss);
+  const color = PLAYER_COLORS[event.playerIndex % PLAYER_COLORS.length];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -40, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      onAnimationComplete={() => {
+        // Hold for 1.2s then dismiss
+        setTimeout(() => dismiss(event.id), 1200);
+      }}
+      style={{
+        position: 'fixed',
+        top: '15%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 9999,
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        className="px-8 py-4 rounded-xl shadow-2xl"
+        style={{
+          background: `linear-gradient(135deg, ${color.hex}20, ${color.hex}40)`,
+          border: `2px solid ${color.hex}80`,
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white mb-1" style={{ textShadow: `0 0 20px ${color.hex}` }}>
+            {event.playerName}'s Turn!
+          </div>
+          <div className="text-sm" style={{ color: color.hex }}>
+            Action Phase
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Overlay (portal-mounted)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -161,12 +216,15 @@ export function AnimationOverlay() {
           case 'card-play':
           case 'card-install':
           case 'card-trash':
+          case 'card-buy':
             return <GhostCard key={event.id} event={event} />;
           case 'credits-change':
           case 'fame-change':
             return <FloatingNumber key={event.id} event={event} />;
           case 'hazard-reveal':
             return <HazardFlash key={event.id} event={event} />;
+          case 'turn-start':
+            return <TurnStartBanner key={event.id} event={event} />;
           case 'mission-complete':
             // Handled by modal pop animation directly
             return null;

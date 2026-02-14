@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { clsx } from 'clsx';
 import type { Player, SystemType } from '@/types';
 import { SYSTEM_CONFIG, SYSTEMS, MAX_POWER } from '@/data/constants';
+import { PLAYER_COLORS } from './SpaceTrack';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -14,6 +15,7 @@ import { SYSTEM_CONFIG, SYSTEMS, MAX_POWER } from '@/data/constants';
 
 export interface OpponentBarProps {
   opponents: Player[];
+  allPlayers?: Player[];  // Full player list for color index lookup
   layout?: 'horizontal' | 'vertical';
 }
 
@@ -56,12 +58,14 @@ function MiniPowerPips({ system, current }: { system: SystemType; current: numbe
 
 interface OpponentMiniProps {
   player: Player;
+  playerIndex: number;
   expanded: boolean;
   onToggle: () => void;
 }
 
-function OpponentMini({ player, expanded, onToggle }: OpponentMiniProps) {
+function OpponentMini({ player, playerIndex, expanded, onToggle }: OpponentMiniProps) {
   const captainImg = getCaptainImagePath(player.captain.id);
+  const pColor = PLAYER_COLORS[playerIndex % PLAYER_COLORS.length];
 
   return (
     <div
@@ -82,7 +86,7 @@ function OpponentMini({ player, expanded, onToggle }: OpponentMiniProps) {
         />
 
         {/* Name */}
-        <span className="font-semibold text-white text-sm">{player.name}</span>
+        <span className={clsx('font-semibold text-sm', pColor.text)}>{player.name}</span>
 
         {/* Quick stats */}
         <div className="flex items-center gap-3 text-xs">
@@ -133,7 +137,12 @@ function OpponentMini({ player, expanded, onToggle }: OpponentMiniProps) {
 // Main Opponent Bar Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function OpponentBar({ opponents, layout = 'horizontal' }: OpponentBarProps) {
+export function OpponentBar({ opponents, allPlayers, layout = 'horizontal' }: OpponentBarProps) {
+  // Helper to get player index for color lookup
+  const getPlayerIndex = (opponent: Player): number => {
+    if (allPlayers) return allPlayers.findIndex(p => p.id === opponent.id);
+    return 0;
+  };
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   if (opponents.length === 0) {
@@ -150,6 +159,9 @@ export function OpponentBar({ opponents, layout = 'horizontal' }: OpponentBarPro
           const captainImg = getCaptainImagePath(opponent.captain.id);
           const isExpanded = expandedId === opponent.id;
 
+          const pIndex = getPlayerIndex(opponent);
+          const pColor = PLAYER_COLORS[pIndex % PLAYER_COLORS.length];
+
           return (
             <div
               key={opponent.id}
@@ -161,10 +173,11 @@ export function OpponentBar({ opponents, layout = 'horizontal' }: OpponentBarPro
                 <img
                   src={captainImg}
                   alt={opponent.captain.name}
-                  className="w-8 h-8 rounded object-cover border border-slate-600"
+                  className={clsx('w-8 h-8 rounded object-cover border', `border-${pColor.hex === '#a855f7' ? 'purple' : pColor.hex === '#fb923c' ? 'orange' : pColor.hex === '#67e8f9' ? 'cyan' : 'pink'}-500/50`)}
+                  style={{ borderColor: pColor.hex + '80' }}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm font-semibold truncate">{opponent.name}</div>
+                  <div className={clsx('text-sm font-semibold truncate', pColor.text)}>{opponent.name}</div>
                   <div className="text-slate-500 text-xs">{opponent.captain.name}</div>
                 </div>
                 <div className="text-amber-400 font-bold text-sm">★{opponent.fame}</div>
@@ -209,6 +222,7 @@ export function OpponentBar({ opponents, layout = 'horizontal' }: OpponentBarPro
         <OpponentMini
           key={opponent.id}
           player={opponent}
+          playerIndex={getPlayerIndex(opponent)}
           expanded={expandedId === opponent.id}
           onToggle={() => setExpandedId(
             expandedId === opponent.id ? null : opponent.id

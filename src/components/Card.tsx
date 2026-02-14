@@ -244,7 +244,7 @@ function StarterCardFront({
   const artPath = getCardArtPath('starter', card.id);
 
   // If we have card art, show it as the full card
-  if (!imgError && !isCompact) {
+  if (!imgError) {
     return (
       <div
         className="relative rounded-lg overflow-hidden"
@@ -311,7 +311,7 @@ function HazardCardFront({
   const artPath = getCardArtPath('hazard', card.id);
 
   // If we have card art, show it as the full card
-  if (!imgError && !isCompact) {
+  if (!imgError) {
     return (
       <div
         className="relative rounded-lg overflow-hidden"

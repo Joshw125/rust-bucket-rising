@@ -11,7 +11,7 @@ import type { SystemConfig, SystemType } from '@/types';
 export const VICTORY_THRESHOLD = 20;
 export const HAND_SIZE = 5;
 export const MAX_POWER = 6;
-export const STARTING_POWER = 0;
+export const STARTING_POWER = 1;
 export const MAX_PLAYERS = 4;
 export const MIN_PLAYERS = 1;
 

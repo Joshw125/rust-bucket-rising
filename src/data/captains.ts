@@ -8,8 +8,8 @@ export const CAPTAINS: Captain[] = [
   {
     id: 'scrapper',
     name: 'Scrapper',
-    effect: 'Start with +3 max Logistics',
-    ability: { startBonus: { logistics: 3 } },
+    effect: 'Start with +2 max Logistics',
+    ability: { startBonus: { logistics: 2 } },
     flavor: 'Nothing is useless.',
     image: 'Scrapper.png',
   },
@@ -48,7 +48,7 @@ export const CAPTAINS: Captain[] = [
   {
     id: 'ghost',
     name: 'Ghost',
-    effect: 'Draw hazard: +1 Card, +1 Credit',
+    effect: 'Draw hazard: +1 Card',
     ability: { trigger: 'onDrawHazard', reward: 'draw' },
     flavor: "What's wrecked can still haunt.",
     image: 'Ghost.png',

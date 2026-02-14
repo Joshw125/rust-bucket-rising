@@ -23,6 +23,7 @@ export interface HandDisplayProps {
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
   layout?: 'horizontal' | 'vertical';
+  isMyTurn?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -524,6 +525,7 @@ export function HandDisplay({
   onClearHazard,
   onViewCard,
   layout = 'horizontal',
+  isMyTurn = true,
 }: HandDisplayProps) {
   // Sort cards for optimal play order: purchased (left) → autoplay (middle) → credits (right)
   const sortedCards = sortHandCards(cards);
@@ -540,7 +542,10 @@ export function HandDisplay({
   // Vertical layout - stacked cards for sidebar
   if (layout === 'vertical') {
     return (
-      <div className="flex flex-col gap-3">
+      <div className={`flex flex-col gap-3 transition-opacity ${!isMyTurn ? 'opacity-60 pointer-events-none' : ''}`}>
+        {!isMyTurn && (
+          <div className="text-center text-slate-500 text-xs font-semibold py-1">Waiting for your turn...</div>
+        )}
         {sortedCards.map((card, index) => (
           <VerticalHandCard
             key={card.instanceId}
@@ -559,7 +564,7 @@ export function HandDisplay({
 
   // Horizontal fanned layout (default)
   return (
-    <div className="hand-container">
+    <div className={`hand-container transition-opacity ${!isMyTurn ? 'opacity-60 pointer-events-none' : ''}`}>
       {sortedCards.map((card, index) => (
         <HandCard
           key={card.instanceId}
