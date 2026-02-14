@@ -815,26 +815,25 @@ export class GameEngine {
     this.state.gameOver = true;
     this.state.phase = 'gameOver';
 
-    // Apply end-game hazard penalty: -1 Fame per 3 hazards in deck
+    // Apply end-game hazard penalty: -1 Fame per hazard in deck
     for (const player of this.state.players) {
       const totalHazards = this.countPlayerHazards(player);
-      const famePenalty = Math.floor(totalHazards / 3);
-      if (famePenalty > 0) {
-        player.fame = Math.max(0, player.fame - famePenalty);
-        this.log(`${player.name} loses ${famePenalty} Fame from ${totalHazards} hazards in deck`, 'hazard');
+      if (totalHazards > 0) {
+        player.fame = Math.max(0, player.fame - totalHazards);
+        this.log(`${player.name} loses ${totalHazards} Fame from ${totalHazards} hazard${totalHazards > 1 ? 's' : ''} in deck`, 'hazard');
       }
     }
 
     // Find winner with tiebreakers:
-    // 1) Highest fame, 2) Most missions completed, 3) Fewest hazards, 4) Most credits
+    // 1) Highest fame, 2) Most hazards (risk/reward — braver player wins), 3) Most missions, 4) Most credits
     const ranked = [...this.state.players].sort((a, b) => {
       if (b.fame !== a.fame) return b.fame - a.fame;
+      const aHazards = this.countPlayerHazards(a);
+      const bHazards = this.countPlayerHazards(b);
+      if (bHazards !== aHazards) return bHazards - aHazards; // More hazards wins (braver)
       if (b.completedMissions.length !== a.completedMissions.length) {
         return b.completedMissions.length - a.completedMissions.length;
       }
-      const aHazards = this.countPlayerHazards(a);
-      const bHazards = this.countPlayerHazards(b);
-      if (aHazards !== bHazards) return aHazards - bHazards;
       return b.credits - a.credits;
     });
 
@@ -2106,6 +2105,13 @@ export class GameEngine {
 
       case 'RESOLVE_PENDING':
         return this.resolvePendingAction(action.choice);
+
+      case 'REVEAL_STACK':
+        if (player.location === action.station || action.station === 1) {
+          this.revealMarketStack(action.station, action.stackIndex);
+          return true;
+        }
+        return false;
 
       case 'RESTART_TURN':
         return this.restartTurn();

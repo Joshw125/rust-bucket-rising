@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 // RUST BUCKET RISING - Fame Track
-// Horizontal 1-25 numbered track with colored player tokens showing position
+// Full-width numbered track (0-25) with colored player tokens showing position
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { clsx } from 'clsx';
-import { useRef, useEffect } from 'react';
 import { PLAYER_COLORS } from './SpaceTrack';
 import { VICTORY_THRESHOLD } from '@/data/constants';
 import type { Player } from '@/types';
@@ -15,8 +14,6 @@ interface FameTrackProps {
 }
 
 export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
-  const trackRef = useRef<HTMLDivElement>(null);
-
   // Build a map of fame value → players at that position
   const positionMap = new Map<number, Array<{ player: Player; index: number }>>();
   players.forEach((player, index) => {
@@ -26,16 +23,6 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
   });
 
   const leadingFame = Math.max(...players.map(p => p.fame));
-
-  // Auto-scroll to keep the leading player visible
-  useEffect(() => {
-    if (trackRef.current && leadingFame > 5) {
-      const cell = trackRef.current.querySelector(`[data-cell="${leadingFame}"]`);
-      if (cell) {
-        cell.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      }
-    }
-  }, [leadingFame]);
 
   // Generate cells 0 to VICTORY_THRESHOLD
   const cells = Array.from({ length: VICTORY_THRESHOLD + 1 }, (_, i) => i);
@@ -71,11 +58,8 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
         </div>
       </div>
 
-      {/* Scrollable track */}
-      <div
-        ref={trackRef}
-        className="flex gap-0 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent pb-0.5"
-      >
+      {/* Full-width track — cells stretch to fill available space */}
+      <div className="flex gap-0 w-full">
         {cells.map((cellValue) => {
           const playersHere = positionMap.get(cellValue) ?? [];
           const isFinishLine = cellValue === VICTORY_THRESHOLD;
@@ -87,11 +71,10 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
               key={cellValue}
               data-cell={cellValue}
               className={clsx(
-                'flex-none flex flex-col items-center relative',
+                'flex-1 min-w-0 flex flex-col items-center relative',
                 'border-r border-slate-800/60',
                 isFinishLine && 'border-r-0',
               )}
-              style={{ width: playersHere.length > 2 ? 36 : 28, minWidth: 28 }}
             >
               {/* Player tokens */}
               <div className="h-5 flex items-end justify-center gap-0.5 mb-0.5">
@@ -120,7 +103,7 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
 
               {/* Cell background and number */}
               <div className={clsx(
-                'w-full h-4 flex items-center justify-center text-[9px] font-semibold rounded-sm',
+                'w-full h-4 flex items-center justify-center text-[8px] font-semibold rounded-sm',
                 isFinishLine
                   ? 'bg-amber-700/40 text-amber-300'
                   : isMilestone
@@ -130,7 +113,9 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
                       : 'bg-slate-900/30 text-slate-600',
                 playersHere.length > 0 && !isFinishLine && 'bg-slate-800/50',
               )}>
-                {cellValue}
+                {/* Show number on milestones, 0, finish, and every 5th cell.
+                    Hide numbers on other cells at small widths for cleanliness */}
+                {(isMilestone || isZero || isFinishLine || cellValue === 1) ? cellValue : ''}
               </div>
             </div>
           );

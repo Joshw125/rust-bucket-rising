@@ -467,6 +467,7 @@ export type GameAction =
   | { type: 'END_TURN' }
   | { type: 'RESOLVE_PENDING'; choice: unknown }
   | { type: 'CLEAR_HAZARD'; hazardInstanceId: string }
+  | { type: 'REVEAL_STACK'; station: 1 | 3 | 5; stackIndex: number }
   | { type: 'RESTART_TURN' };
 
 // ─────────────────────────────────────────────────────────────────────────────

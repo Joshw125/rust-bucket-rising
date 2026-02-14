@@ -350,13 +350,7 @@ export const useGameStore = create<GameStore>()(
     },
 
     revealMarketStack: (station, stackIndex) => {
-      const { engine } = get();
-      if (!engine) return;
-
-      engine.revealMarketStack(station, stackIndex);
-      set((state) => {
-        state.gameState = JSON.parse(JSON.stringify(engine.getState()));
-      });
+      get().dispatch({ type: 'REVEAL_STACK', station, stackIndex });
     },
 
     endTurn: () => {
