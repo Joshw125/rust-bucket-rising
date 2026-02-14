@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import type { MarketStacks, MarketStackInfo, CardInstance, Player, SystemType, ActionCard } from '@/types';
 import { CardStack, CardBack, Card } from './Card';
@@ -68,7 +69,7 @@ function StackBrowserModal({
   const totalCost = buyCost + installCost;
   const canBuyAndInstall = isAtStation && isInstallable && currentPlayer.credits >= totalCost;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={onClose}>
       <div className="game-panel p-6 max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -205,7 +206,8 @@ function StackBrowserModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
