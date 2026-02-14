@@ -20,6 +20,7 @@ export interface PyramidMarketProps {
   onBuyAndInstall?: (station: 1 | 3 | 5, stackIndex: number, targetSystem: SystemType, cardIndex?: number) => void;
   onViewCard?: (card: CardInstance) => void;
   onRevealStack?: (station: 1 | 3 | 5, stackIndex: number) => void;
+  compact?: boolean; // Mobile-friendly smaller rendering
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,6 +222,7 @@ interface MarketStackComponentProps {
   onBuyAndInstall?: (targetSystem: SystemType) => void;
   onViewCard?: (card: CardInstance) => void;
   onReveal?: () => void;
+  compact?: boolean;
 }
 
 function MarketStackComponent({
@@ -231,17 +233,23 @@ function MarketStackComponent({
   onBuyAndInstall,
   onViewCard,
   onReveal,
+  compact,
 }: MarketStackComponentProps) {
   const [showInstallMenu, setShowInstallMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
   const { cards, revealed } = stackInfo;
 
+  const cardSize = compact ? 'small' : 'normal';
+
   // Show empty slot when stack is depleted
   if (cards.length === 0) {
     return (
       <div className="relative flex flex-col items-center opacity-30">
-        <div className="w-[100px] h-[140px] rounded-lg border-2 border-dashed border-slate-600 bg-slate-900/50 flex items-center justify-center">
+        <div className={clsx(
+          'rounded-lg border-2 border-dashed border-slate-600 bg-slate-900/50 flex items-center justify-center',
+          compact ? 'w-[80px] h-[112px]' : 'w-[100px] h-[140px]',
+        )}>
           <span className="text-slate-600 text-xs">Empty</span>
         </div>
       </div>
@@ -288,7 +296,7 @@ function MarketStackComponent({
             {cards.length > 1 && (
               <div className="absolute top-0.5 left-0.5 w-full h-full rounded-lg bg-slate-800 border border-slate-700" />
             )}
-            <CardBack size="normal" />
+            <CardBack size={cardSize} />
           </div>
         </div>
 
@@ -312,7 +320,7 @@ function MarketStackComponent({
   // Revealed stack
   return (
     <div
-      className="relative flex flex-col items-center pb-16"
+      className={clsx('relative flex flex-col items-center', compact ? 'pb-10' : 'pb-16')}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
         setIsHovered(false);
@@ -326,20 +334,26 @@ function MarketStackComponent({
       )}>
         <CardStack
           cards={cards}
-          size="normal"
+          size={cardSize}
           showTopCard={true}
           onClick={() => onViewCard?.(topCard)}
         />
       </div>
 
       {/* Stack count */}
-      <div className="absolute top-[136px] -right-1 bg-slate-900 text-amber-400 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-600/50">
+      <div className={clsx(
+        'absolute -right-1 bg-slate-900 text-amber-400 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-600/50',
+        compact ? 'top-[108px]' : 'top-[136px]',
+      )}>
         {cards.length}
       </div>
 
       {/* Buy buttons - show on hover, positioned inside hover area */}
       {isHovered && isAtStation && (
-        <div className="absolute top-[150px] left-1/2 -translate-x-1/2 flex flex-col gap-1 z-20">
+        <div className={clsx(
+          'absolute left-1/2 -translate-x-1/2 flex flex-col gap-1 z-20',
+          compact ? 'top-[118px]' : 'top-[150px]',
+        )}>
           {/* Buy only */}
           <button
             className={clsx(
@@ -420,6 +434,7 @@ interface MarketRowProps {
   onBuyAndInstall?: (stackIndex: number, targetSystem: SystemType) => void;
   onViewCard?: (card: CardInstance) => void;
   onRevealStack?: (stackIndex: number) => void;
+  compact?: boolean;
 }
 
 function MarketRow({
@@ -430,6 +445,7 @@ function MarketRow({
   onBuyAndInstall,
   onViewCard,
   onRevealStack,
+  compact,
 }: MarketRowProps) {
   const isAtStation = currentPlayer.location === station;
   const tierLabel = station === 1 ? 'Tier 1' : station === 3 ? 'Tier 2' : 'Tier 3';
@@ -442,7 +458,7 @@ function MarketRow({
   if (nonEmptyStacks.length === 0) {
     return (
       <div className="flex items-center justify-center gap-2 opacity-50">
-        <img src={STATION_ICONS[station]} alt={`Station ${station}`} className="w-6 h-6 opacity-50" />
+        <img src={STATION_ICONS[station]} alt={`Station ${station}`} className={clsx(compact ? 'w-5 h-5' : 'w-6 h-6', 'opacity-50')} />
         <span className="text-slate-500 text-xs">{tierLabel} - Empty</span>
       </div>
     );
@@ -458,7 +474,7 @@ function MarketRow({
         <img
           src={STATION_ICONS[station]}
           alt={`Station ${station}`}
-          className="w-8 h-8"
+          className={compact ? 'w-6 h-6' : 'w-8 h-8'}
         />
         <span className={clsx(
           'text-[9px] font-bold',
@@ -469,7 +485,7 @@ function MarketRow({
       </div>
 
       {/* Card stacks */}
-      <div className="flex gap-1.5">
+      <div className={clsx('flex', compact ? 'gap-1' : 'gap-1.5')}>
         {nonEmptyStacks.map(({ info, idx }) => (
           <MarketStackComponent
             key={idx}
@@ -481,6 +497,7 @@ function MarketRow({
             onBuyAndInstall={(sys) => onBuyAndInstall?.(idx, sys)}
             onViewCard={onViewCard}
             onReveal={() => onRevealStack?.(idx)}
+            compact={compact}
           />
         ))}
       </div>
@@ -499,6 +516,7 @@ export function PyramidMarket({
   onBuyAndInstall,
   onViewCard,
   onRevealStack,
+  compact,
 }: PyramidMarketProps) {
   // State for stack browser modal
   const [browsingStack, setBrowsingStack] = useState<{
@@ -530,7 +548,7 @@ export function PyramidMarket({
     : null;
 
   return (
-    <div className="flex flex-col items-center gap-1.5 py-2">
+    <div className={clsx('flex flex-col items-center py-2', compact ? 'gap-1' : 'gap-1.5')}>
       {/* Tier 3 - Top of pyramid (3 stacks) */}
       <MarketRow
         station={5}
@@ -544,6 +562,7 @@ export function PyramidMarket({
           else onViewCard?.(card);
         }}
         onRevealStack={(idx) => handleRevealAndBrowse(5, idx)}
+        compact={compact}
       />
 
       {/* Tier 2 - Middle (4 stacks) */}
@@ -559,6 +578,7 @@ export function PyramidMarket({
           else onViewCard?.(card);
         }}
         onRevealStack={(idx) => handleRevealAndBrowse(3, idx)}
+        compact={compact}
       />
 
       {/* Tier 1 - Bottom of pyramid (5 stacks) */}
@@ -570,6 +590,7 @@ export function PyramidMarket({
         onBuyAndInstall={(idx, sys) => onBuyAndInstall?.(1, idx, sys)}
         onViewCard={onViewCard}
         onRevealStack={(idx) => onRevealStack?.(1, idx)}
+        compact={compact}
       />
 
       {/* Stack Browser Modal */}

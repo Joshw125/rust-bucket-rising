@@ -1177,13 +1177,15 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {/* TRACK VIEW */}
           {activeView === 'track' && (
             <div className="mobile-track-scroll py-3">
-              <SpaceTrack
-                state={gameState}
-                currentPlayerId={currentPlayer.id}
-                onMove={move}
-                onViewMission={(tm) => viewMission(tm.mission)}
-                compact
-              />
+              <div className="min-w-fit px-2">
+                <SpaceTrack
+                  state={gameState}
+                  currentPlayerId={currentPlayer.id}
+                  onMove={move}
+                  onViewMission={(tm) => viewMission(tm.mission)}
+                  compact
+                />
+              </div>
             </div>
           )}
 
@@ -1270,15 +1272,18 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
           {/* MARKET VIEW */}
           {activeView === 'market' && (
-            <div className="p-3">
-              <PyramidMarket
-                marketStacks={gameState.marketStacks}
-                currentPlayer={currentPlayer}
-                onBuyCard={buyCard}
-                onBuyAndInstall={buyAndInstall}
-                onViewCard={viewCard}
-                onRevealStack={revealMarketStack}
-              />
+            <div className="mobile-market-scroll">
+              <div className="min-w-fit px-2">
+                <PyramidMarket
+                  marketStacks={gameState.marketStacks}
+                  currentPlayer={currentPlayer}
+                  onBuyCard={buyCard}
+                  onBuyAndInstall={buyAndInstall}
+                  onViewCard={viewCard}
+                  onRevealStack={revealMarketStack}
+                  compact
+                />
+              </div>
             </div>
           )}
         </div>

@@ -592,10 +592,18 @@
 .mobile-view-container {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   /* Clearance for fixed bars: action bar (~48px) + tab bar (~56px) + safe area */
   padding-bottom: 112px;
+}
+
+/* Market scroll container - centered scrollable area */
+.mobile-market-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem 0;
 }
 
 /* Mobile action bar - floats above tab bar */

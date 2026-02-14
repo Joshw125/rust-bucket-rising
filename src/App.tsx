@@ -15,6 +15,9 @@ import type { Captain, AIStrategy, GameAction } from './types';
 // Main Menu Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Captain portrait IDs for the showcase row
+const CAPTAIN_IDS = ['Scrapper', 'Veteran', 'Tycoon', 'Mercenary', 'Navigator', 'Ghost', 'Broker', 'Engineer', 'Infiltrator'];
+
 function MainMenu({
   onNewGame,
   onOnlinePlay,
@@ -25,67 +28,95 @@ function MainMenu({
   onSimulation: () => void;
 }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-center p-6">
-      <div className="max-w-2xl w-full text-center">
-        <div className="mb-12">
+    <div className="min-h-screen relative text-white flex items-center justify-center p-6">
+      {/* Dark overlay for readability over the body background */}
+      <div className="fixed inset-0 bg-black/60 pointer-events-none" />
+
+      <div className="max-w-2xl w-full text-center relative z-10">
+        {/* Title */}
+        <div className="mb-8">
           <h1 className="text-6xl font-black tracking-tight mb-2">
-            <span className="bg-gradient-to-r from-orange-400 via-yellow-400 to-amber-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-amber-400 via-orange-500 to-rust bg-clip-text text-transparent">
               RUST BUCKET
             </span>
           </h1>
           <h2 className="text-4xl font-black tracking-tight">
-            <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 bg-clip-text text-transparent">
               RISING
             </span>
           </h2>
-          <p className="text-slate-400 mt-4 text-lg">A Competitive Spacefaring Deck-Builder</p>
-          <p className="text-slate-500 mt-2 text-sm">Digital Playtest Edition</p>
+          <p className="text-amber-200/60 mt-4 text-lg">A Competitive Spacefaring Deck-Builder</p>
+          <p className="text-amber-300/30 mt-2 text-sm">Digital Playtest Edition</p>
         </div>
 
-        <div className="space-y-4">
+        {/* Captain portraits row */}
+        <div className="flex items-center justify-center gap-2 mb-8">
+          {CAPTAIN_IDS.map((id) => (
+            <img
+              key={id}
+              src={`/cards/captain/${id}.png`}
+              alt={id}
+              className="w-10 h-10 rounded-lg object-cover border-2 border-amber-600/40 shadow-lg shadow-black/40 hover:border-amber-400 hover:scale-110 transition-all"
+            />
+          ))}
+        </div>
+
+        {/* Buttons */}
+        <div className="space-y-3">
           <button
             onClick={onNewGame}
-            className="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-2xl font-bold text-xl transition-all hover:scale-105 shadow-lg shadow-cyan-500/30"
+            className="w-full py-4 rounded-xl font-bold text-xl transition-all hover:scale-[1.02] text-slate-900
+                       bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500
+                       hover:from-orange-400 hover:via-amber-400 hover:to-orange-400
+                       shadow-lg shadow-orange-500/30 border border-amber-400/30"
           >
             Local Game
           </button>
           <button
             onClick={onOnlinePlay}
-            className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 rounded-2xl font-bold text-xl transition-all hover:scale-105 shadow-lg shadow-green-500/30"
+            className="w-full py-4 rounded-xl font-bold text-xl transition-all hover:scale-[1.02] text-white
+                       bg-gradient-to-r from-amber-700 via-copper to-amber-700
+                       hover:from-amber-600 hover:via-amber-500 hover:to-amber-600
+                       shadow-lg shadow-amber-700/30 border border-amber-500/30"
           >
             Online Play
           </button>
           <button
             onClick={onSimulation}
-            className="w-full py-4 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 rounded-2xl font-bold text-xl transition-all hover:scale-105 shadow-lg shadow-purple-500/30"
+            className="w-full py-4 rounded-xl font-bold text-xl transition-all hover:scale-[1.02] text-white
+                       bg-gradient-to-r from-rust via-orange-800 to-rust
+                       hover:from-orange-700 hover:via-orange-600 hover:to-orange-700
+                       shadow-lg shadow-rust/30 border border-rust/40"
           >
             Simulation Mode
           </button>
           <button
-            className="w-full py-4 bg-slate-700 hover:bg-slate-600 rounded-2xl font-bold text-xl transition-all hover:scale-105 opacity-50 cursor-not-allowed"
+            className="w-full py-4 rounded-xl font-bold text-xl transition-all
+                       bg-slate-800/70 text-slate-500 border border-slate-700/50 cursor-not-allowed"
             disabled
           >
             How to Play (Coming Soon)
           </button>
         </div>
 
-        <div className="mt-12 text-left bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
-          <h3 className="font-bold text-lg text-white mb-3">Game Features</h3>
+        {/* Features panel */}
+        <div className="mt-10 text-left game-panel p-6">
+          <h3 className="font-bold text-lg text-amber-400 mb-3">Game Features</h3>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <div className="font-bold text-green-400 mb-1">Implemented</div>
+              <div className="font-bold text-amber-300 mb-1">Implemented</div>
               <ul className="text-slate-400 text-xs space-y-1">
                 <li>Full game engine with all rules</li>
                 <li>9 unique captains</li>
                 <li>38 action cards + 11 hazards</li>
                 <li>30 missions across 3 zones</li>
                 <li>Hot-seat multiplayer (2-4 players)</li>
-                <li className="text-green-400">AI opponents ✓</li>
-                <li className="text-green-400">Online multiplayer ✓</li>
+                <li className="text-amber-400">AI opponents</li>
+                <li className="text-amber-400">Online multiplayer</li>
               </ul>
             </div>
             <div>
-              <div className="font-bold text-yellow-400 mb-1">Coming Soon</div>
+              <div className="font-bold text-amber-500/70 mb-1">Coming Soon</div>
               <ul className="text-slate-400 text-xs space-y-1">
                 <li>Sound effects</li>
                 <li>Desktop app (Steam)</li>
