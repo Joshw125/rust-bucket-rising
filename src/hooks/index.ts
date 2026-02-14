@@ -23,3 +23,5 @@ export {
 } from './useMultiplayer';
 
 export { useUIScaleStore } from './useUIScaleStore';
+export { useIsMobile } from './useIsMobile';
+export { useMobileViewStore } from './useMobileViewStore';

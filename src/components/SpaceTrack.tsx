@@ -17,6 +17,7 @@ export interface SpaceTrackProps {
   onMove?: (direction: -1 | 1) => void;
   onSelectLocation?: (location: number) => void;
   onViewMission?: (mission: TrackMission) => void;
+  compact?: boolean; // Mobile-friendly smaller rendering
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ interface TrackLocationProps {
   isStation: boolean;
   hasCurrentPlayer: boolean;
   onViewMission?: (mission: TrackMission) => void;
+  compact?: boolean;
 }
 
 function TrackLocation({
@@ -79,6 +81,7 @@ function TrackLocation({
   isStation,
   hasCurrentPlayer,
   onViewMission,
+  compact,
 }: TrackLocationProps) {
   const zone = ZONE_MAP[location];
   const zoneStyle = ZONE_STYLES[zone];
@@ -90,15 +93,16 @@ function TrackLocation({
         <img
           src={STATION_ICONS[location as 1 | 3 | 5]}
           alt={`Station ${location}`}
-          className="w-10 h-10 mb-1 drop-shadow-md"
+          className={clsx(compact ? 'w-7 h-7 mb-0.5' : 'w-10 h-10 mb-1', 'drop-shadow-md')}
         />
       )}
-      {!isStation && <div className="w-10 h-10 mb-1" />}
+      {!isStation && <div className={compact ? 'w-7 h-7 mb-0.5' : 'w-10 h-10 mb-1'} />}
 
       {/* Location node on the track */}
       <div
         className={clsx(
-          'relative w-16 h-16 rounded-lg border-2 flex items-center justify-center',
+          'relative rounded-lg border-2 flex items-center justify-center',
+          compact ? 'w-10 h-10' : 'w-16 h-16',
           zoneStyle.trackBg,
           zoneStyle.border,
           hasCurrentPlayer && 'ring-2 ring-amber-400 ring-offset-2 ring-offset-transparent shadow-lg shadow-amber-500/30',
@@ -106,7 +110,8 @@ function TrackLocation({
       >
         {/* Location number */}
         <span className={clsx(
-          'font-bold text-2xl',
+          'font-bold',
+          compact ? 'text-base' : 'text-2xl',
           hasCurrentPlayer ? 'text-white' : 'text-white/70',
         )}>
           {location}
@@ -130,7 +135,8 @@ function TrackLocation({
             <div
               key={player.id}
               className={clsx(
-                'absolute w-5 h-5 rounded-full border-2 border-white',
+                'absolute rounded-full border-2 border-white',
+                compact ? 'w-3.5 h-3.5' : 'w-5 h-5',
                 color.bg,
                 isCurrentPlayer && 'ring-2 ring-amber-400',
                 positions[idx % 4],
@@ -142,7 +148,7 @@ function TrackLocation({
       </div>
 
       {/* Mission card below */}
-      <div className="mt-2">
+      <div className={compact ? 'mt-1' : 'mt-2'}>
         {mission ? (
           <div
             className="cursor-pointer transition-transform hover:scale-105"
@@ -150,12 +156,15 @@ function TrackLocation({
           >
             <MissionCard
               mission={mission.mission}
-              size="large"
+              size={compact ? 'small' : 'large'}
               showBack={!mission.revealed}
             />
           </div>
         ) : (
-          <div className="w-40 h-56 rounded-lg border-2 border-dashed border-slate-700/30 bg-slate-900/20 flex items-center justify-center">
+          <div className={clsx(
+            'rounded-lg border-2 border-dashed border-slate-700/30 bg-slate-900/20 flex items-center justify-center',
+            compact ? 'w-20 h-28' : 'w-40 h-56',
+          )}>
             <span className="text-slate-600 text-xs">No Mission</span>
           </div>
         )}
@@ -172,6 +181,7 @@ export function SpaceTrack({
   state,
   currentPlayerId,
   onViewMission,
+  compact,
 }: SpaceTrackProps) {
   const locations = [1, 2, 3, 4, 5, 6] as const;
 
@@ -186,27 +196,30 @@ export function SpaceTrack({
   return (
     <div className="flex flex-col items-center">
       {/* Zone labels */}
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded', ZONE_STYLES.near.text, 'bg-near/20')}>
-          {ZONE_STYLES.near.label}
+      <div className={clsx('flex items-center justify-center gap-2', compact ? 'mb-1' : 'mb-2')}>
+        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.near.text, 'bg-near/20')}>
+          {compact ? 'NEAR' : ZONE_STYLES.near.label}
         </span>
         <span className="text-slate-600">→</span>
-        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded', ZONE_STYLES.mid.text, 'bg-mid/20')}>
-          {ZONE_STYLES.mid.label}
+        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.mid.text, 'bg-mid/20')}>
+          {compact ? 'MID' : ZONE_STYLES.mid.label}
         </span>
         <span className="text-slate-600">→</span>
-        <span className={clsx('text-xs font-bold px-2 py-0.5 rounded', ZONE_STYLES.deep.text, 'bg-deep/20')}>
-          {ZONE_STYLES.deep.label}
+        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.deep.text, 'bg-deep/20')}>
+          {compact ? 'DEEP' : ZONE_STYLES.deep.label}
         </span>
       </div>
 
       {/* The track - straight horizontal line with locations */}
       <div className="relative flex items-start">
         {/* Connecting line behind the nodes */}
-        <div className="absolute top-[60px] left-8 right-8 h-1 bg-gradient-to-r from-near/40 via-mid/40 to-deep/40 rounded-full" />
+        <div className={clsx(
+          'absolute left-8 right-8 h-1 bg-gradient-to-r from-near/40 via-mid/40 to-deep/40 rounded-full',
+          compact ? 'top-[38px]' : 'top-[60px]',
+        )} />
 
         {/* Location nodes */}
-        <div className="flex items-start gap-4">
+        <div className={clsx('flex items-start', compact ? 'gap-2' : 'gap-4')}>
           {locations.map((loc) => (
             <TrackLocation
               key={loc}
@@ -218,6 +231,7 @@ export function SpaceTrack({
               isStation={STATION_LOCATIONS.includes(loc as 1 | 3 | 5)}
               hasCurrentPlayer={currentPlayer?.location === loc}
               onViewMission={onViewMission}
+              compact={compact}
             />
           ))}
         </div>

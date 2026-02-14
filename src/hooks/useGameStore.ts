@@ -72,6 +72,7 @@ export interface GameStore {
   resolveTrashCard: (cardInstanceId: string) => boolean;
   restartTurn: () => boolean;
   canRestartTurn: () => boolean;
+  canCompleteMission: () => boolean;
 
   // Multiplayer support
   applyRemoteAction: (action: GameAction) => boolean;
@@ -400,6 +401,13 @@ export const useGameStore = create<GameStore>()(
       const { engine } = get();
       if (!engine) return false;
       return engine.canRestartTurn();
+    },
+
+    canCompleteMission: () => {
+      const { engine } = get();
+      if (!engine) return false;
+      const player = engine.getCurrentPlayer();
+      return engine.canCompleteMission(player);
     },
 
     // Apply an action received from another player (multiplayer)

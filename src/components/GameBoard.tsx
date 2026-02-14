@@ -7,6 +7,8 @@ import { clsx } from 'clsx';
 import { createPortal } from 'react-dom';
 import { useGameStore, useCurrentPlayer, usePlayers, useIsGameOver, useWinner, useMultiplayer } from '@/hooks';
 import { useUIScaleStore } from '@/hooks/useUIScaleStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useMobileViewStore } from '@/hooks/useMobileViewStore';
 import { SpaceTrack } from './SpaceTrack';
 import { ExpandedSystemPanel } from './PlayerStatsBar';
 import { HandDisplay } from './HandDisplay';
@@ -16,6 +18,8 @@ import { MarketOverlay } from './MarketDisplay';
 import { Card, MissionCard, CardBack } from './Card';
 import { ScaledSection } from './ScaledSection';
 import { ScaleSettingsPanel } from './ScaleSettingsPanel';
+import { MobileTabBar } from './MobileTabBar';
+import { MobileActionBar } from './MobileActionBar';
 import type { SystemType, MissionInstance, GameAction } from '@/types';
 import { useState, useCallback, useEffect } from 'react';
 
@@ -41,7 +45,7 @@ function GameHeader() {
         <button
           onClick={toggleScalePanel}
           className={clsx(
-            'text-sm px-2 py-1 rounded transition-all',
+            'text-sm px-2 py-1 rounded transition-all desktop-only',
             showScalePanel
               ? 'bg-amber-500/20 text-amber-400'
               : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
@@ -194,6 +198,7 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
   const showMarket = useGameStore((s) => s.showMarket);
   const storeRestartTurn = useGameStore((s) => s.restartTurn);
   const canRestartTurn = useGameStore((s) => s.canRestartTurn);
+  const storeCanCompleteMission = useGameStore((s) => s.canCompleteMission);
 
   // Wrap actions to check turn ownership (multiplayer sync happens via store callback)
   const endTurn = () => {
@@ -220,18 +225,10 @@ function ActionBar({ isMyTurn = true }: { isMyTurn?: boolean }) {
 
   const canRestart = canRestartTurn();
 
-  // Check if can complete mission at current location
+  // Check if can complete mission at current location (delegate to engine for single source of truth)
   const trackMission = gameState.trackMissions[currentPlayer.location];
-  const mission = trackMission?.mission;
   const missionRevealed = trackMission?.revealed;
-
-  // Check if player meets mission requirements
-  const meetsMissionRequirements = mission && missionRevealed ? (
-    (mission.requirements.weapons || 0) <= currentPlayer.currentPower.weapons &&
-    (mission.requirements.computers || 0) <= currentPlayer.currentPower.computers &&
-    (mission.requirements.engines || 0) <= currentPlayer.currentPower.engines &&
-    (mission.requirements.logistics || 0) <= currentPlayer.currentPower.logistics
-  ) : false;
+  const meetsMissionRequirements = storeCanCompleteMission();
 
   // Check if player can move
   const canMove = isMyTurn && (currentPlayer.movesRemaining > 0 || currentPlayer.currentPower.engines >= 1);
@@ -974,6 +971,8 @@ interface GameBoardProps {
 }
 
 export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: GameBoardProps) {
+  const isMobile = useIsMobile();
+  const activeView = useMobileViewStore((s) => s.activeView);
   const gameState = useGameStore((s) => s.gameState);
   const currentPlayer = useCurrentPlayer();
   const players = usePlayers();
@@ -1064,6 +1063,236 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
   // Other players (not current)
   const otherPlayers = players.filter(p => p.id !== currentPlayer.id);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MOBILE LAYOUT
+  // ─────────────────────────────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div className="game-container">
+        {/* Shared overlays — these are fixed/portal so they work on any layout */}
+        {isGameOver && <VictoryScreen />}
+        <ViewerModal />
+        {pendingPowerChoice && <PowerChoiceModal />}
+        <HazardRevealModal />
+        <TrashCardModal />
+        <MissionRewardModal />
+        <MissionRewardChoiceModal />
+        <TargetPlayerModal />
+        <Draw3Keep1Modal />
+        <MoveOtherPlayerModal />
+
+        {/* AI/Online thinking indicators */}
+        {currentPlayer.isAI && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-purple-900/90 px-4 py-2 rounded-xl border border-purple-500 text-sm">
+            <span className="text-purple-200 font-semibold">{currentPlayer.name}</span>
+            <span className="text-purple-400"> thinking...</span>
+          </div>
+        )}
+        {isOnlineGame && !isMyTurn && !currentPlayer.isAI && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-cyan-900/90 px-4 py-2 rounded-xl border border-cyan-500 text-sm">
+            <span className="text-cyan-400">Waiting for </span>
+            <span className="text-cyan-200 font-semibold">{currentPlayer.name}</span>
+          </div>
+        )}
+
+        {/* Compact header */}
+        <header className="flex-none px-3 py-1.5 bg-slate-950/50 border-b border-amber-900/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <img
+                src={`/cards/captain/${currentPlayer.captain.id.charAt(0).toUpperCase() + currentPlayer.captain.id.slice(1)}.png`}
+                alt={currentPlayer.captain.name}
+                className="w-8 h-8 rounded object-cover border border-amber-600/50"
+              />
+              <div>
+                <div className="text-amber-400 font-bold text-sm leading-none">{currentPlayer.name}</div>
+                <div className="text-slate-500 text-[10px] leading-none mt-0.5">{currentPlayer.captain.name}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-slate-500">
+                T<span className="text-amber-400 font-bold">{gameState.turn}</span>
+              </span>
+              <span className={clsx(
+                'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase',
+                gameState.phase === 'action' && 'bg-amber-500/20 text-amber-400',
+                gameState.phase === 'cleanup' && 'bg-slate-500/20 text-slate-400',
+                gameState.phase === 'initial' && 'bg-red-500/20 text-red-400',
+              )}>
+                {gameState.phase}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* Active view content */}
+        <div className="mobile-view-container">
+          {/* HAND VIEW */}
+          {activeView === 'hand' && (
+            <div className="p-3">
+              <HandDisplay
+                cards={currentPlayer.hand}
+                player={currentPlayer}
+                onPlayCard={playCardWithChoice}
+                onInstallCard={(card, system) => installCard(card.instanceId, system)}
+                onClearHazard={(card) => clearHazard(card.instanceId)}
+                onViewCard={viewCard}
+                layout="vertical"
+              />
+
+              {/* Deck / Played / Discard - compact row */}
+              <div className="flex items-end justify-center gap-4 mt-4 pt-3 border-t border-slate-800">
+                <div className="flex flex-col items-center">
+                  <CardBack size="tiny" />
+                  <div className="text-amber-500 text-[10px] font-bold mt-0.5">{currentPlayer.deck.length}</div>
+                  <span className="text-slate-500 text-[8px] font-semibold">DECK</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  {currentPlayer.played.length > 0 ? (
+                    <Card card={currentPlayer.played[currentPlayer.played.length - 1]} size="tiny" />
+                  ) : (
+                    <div className="w-16 h-22 rounded border-2 border-dashed border-green-700/50 bg-green-900/20 flex items-center justify-center">
+                      <span className="text-green-600 text-[10px]">-</span>
+                    </div>
+                  )}
+                  <div className="text-green-500 text-[10px] font-bold mt-0.5">{currentPlayer.played.length}</div>
+                  <span className="text-slate-500 text-[8px] font-semibold">PLAYED</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  {currentPlayer.discard.length > 0 ? (
+                    <Card card={currentPlayer.discard[currentPlayer.discard.length - 1]} size="tiny" />
+                  ) : (
+                    <div className="w-16 h-22 rounded border-2 border-dashed border-slate-700 bg-slate-900/50 flex items-center justify-center">
+                      <span className="text-slate-600 text-[10px]">-</span>
+                    </div>
+                  )}
+                  <div className="text-slate-400 text-[10px] font-bold mt-0.5">{currentPlayer.discard.length}</div>
+                  <span className="text-slate-500 text-[8px] font-semibold">DISCARD</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TRACK VIEW */}
+          {activeView === 'track' && (
+            <div className="mobile-track-scroll py-3">
+              <SpaceTrack
+                state={gameState}
+                currentPlayerId={currentPlayer.id}
+                onMove={move}
+                onViewMission={(tm) => viewMission(tm.mission)}
+                compact
+              />
+            </div>
+          )}
+
+          {/* SYSTEMS VIEW (sidebar content) */}
+          {activeView === 'systems' && (
+            <div className="p-3 space-y-3">
+              {/* Captain & Fame */}
+              <div className="flex items-center gap-3 p-3 game-panel">
+                <img
+                  src={`/cards/captain/${currentPlayer.captain.id.charAt(0).toUpperCase() + currentPlayer.captain.id.slice(1)}.png`}
+                  alt={currentPlayer.captain.name}
+                  className="w-14 h-14 rounded object-cover border-2 border-amber-600/50"
+                />
+                <div className="flex-1">
+                  <div className="text-amber-400 font-bold">{currentPlayer.name}</div>
+                  <div className="text-slate-500 text-xs mb-1">{currentPlayer.captain.name}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <span className="text-amber-400">★</span>
+                      <span className="text-amber-400 font-bold text-lg">{currentPlayer.fame}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-amber-300 text-sm">💰</span>
+                      <span className="text-amber-300 font-semibold">{currentPlayer.credits}</span>
+                    </div>
+                    {currentPlayer.movesRemaining > 0 && (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 bg-engines/20 rounded">
+                        <span className="text-engines font-bold text-sm">{currentPlayer.movesRemaining}</span>
+                        <span className="text-engines text-xs">Moves</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Ship Systems */}
+              <div className="space-y-2">
+                <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Ship Systems</h3>
+                <ExpandedSystemPanel system="weapons" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('weapons' as SystemType, idx)} />
+                <ExpandedSystemPanel system="computers" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('computers' as SystemType, idx)} />
+                <ExpandedSystemPanel system="engines" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('engines' as SystemType, idx)} />
+                <ExpandedSystemPanel system="logistics" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('logistics' as SystemType, idx)} />
+              </div>
+
+              {/* Completed Missions & Trophies */}
+              {(currentPlayer.completedMissions.length > 0 || currentPlayer.trophies.length > 0) && (
+                <div className="border-t border-amber-900/20 pt-3">
+                  {currentPlayer.trophies.length > 0 && (
+                    <div className="mb-3">
+                      <h3 className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">
+                        🏆 Trophies ({currentPlayer.trophies.length})
+                      </h3>
+                      <div className="space-y-1">
+                        {currentPlayer.trophies.map((trophy) => (
+                          <TrophyItem key={trophy.instanceId} trophy={trophy} onView={() => viewMission(trophy)} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
+                    <div>
+                      <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                        Completed Missions ({currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length})
+                      </h3>
+                      <div className="space-y-1">
+                        {currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').map((mission) => (
+                          <MissionItem key={mission.instanceId} mission={mission} onView={() => viewMission(mission)} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Opponents */}
+              {otherPlayers.length > 0 && (
+                <div className="border-t border-amber-900/20 pt-3">
+                  <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
+                  <OpponentBar opponents={otherPlayers} layout="vertical" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MARKET VIEW */}
+          {activeView === 'market' && (
+            <div className="p-3">
+              <PyramidMarket
+                marketStacks={gameState.marketStacks}
+                currentPlayer={currentPlayer}
+                onBuyCard={buyCard}
+                onBuyAndInstall={buyAndInstall}
+                onViewCard={viewCard}
+                onRevealStack={revealMarketStack}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Mobile action controls + tab navigation */}
+        <MobileActionBar isMyTurn={isMyTurn} />
+        <MobileTabBar />
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DESKTOP LAYOUT (unchanged)
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="game-container">

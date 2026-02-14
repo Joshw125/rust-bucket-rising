@@ -10,3 +10,5 @@ export { GameBoard } from './GameBoard';
 export { GameSetup } from './GameSetup';
 export { ScaledSection } from './ScaledSection';
 export { ScaleSettingsPanel } from './ScaleSettingsPanel';
+export { MobileTabBar } from './MobileTabBar';
+export { MobileActionBar } from './MobileActionBar';
