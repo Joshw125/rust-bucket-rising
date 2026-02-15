@@ -2261,6 +2261,19 @@ export class GameEngine {
           // Install the gear mission to this system
           player.gearInstallations[targetSystem] = rewardData.mission;
           this.log(`  Installed ${rewardData.mission.title} gear in ${targetSystem}`, 'reward');
+
+          // Apply immediate bonuses from the gear's rewardData
+          const gearData = rewardData.mission.rewardData;
+          if (gearData) {
+            if (gearData.credits && !gearData.conditionalCredits && !gearData.passive) {
+              player.credits += gearData.credits;
+              this.log(`  Gear bonus: +${gearData.credits} credit${gearData.credits > 1 ? 's' : ''}`, 'reward');
+            }
+            if (gearData.draw) {
+              this.drawCards(player, gearData.draw);
+              this.log(`  Gear bonus: +${gearData.draw} card${gearData.draw > 1 ? 's' : ''}`, 'reward');
+            }
+          }
         }
 
         // Apply any immediate power bonus (for both gear and trophy rewards)
