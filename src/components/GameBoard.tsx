@@ -1202,6 +1202,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   // Animation refs
   const playedPileRef = useRef<HTMLDivElement>(null);
   const discardPileRef = useRef<HTMLDivElement>(null);
+  const creditCounterRef = useRef<HTMLElement>(null);
+  const prevCreditsRef = useRef<number | null>(null);
   const animEmit = useAnimationStore((s) => s.emit);
   const animSetRef = useAnimationStore((s) => s.setRef);
 
@@ -1210,6 +1212,23 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     animSetRef('playedPile', playedPileRef.current);
     animSetRef('discardPile', discardPileRef.current);
   }, [animSetRef]);
+
+  // Callback ref for credit counter — works across mobile/desktop layouts
+  const setCreditCounterRef = useCallback((el: HTMLElement | null) => {
+    (creditCounterRef as React.MutableRefObject<HTMLElement | null>).current = el;
+    animSetRef('creditCounter', el);
+  }, [animSetRef]);
+
+  // Emit credit fly animation when credits change
+  useEffect(() => {
+    if (!currentPlayer) return;
+    const credits = currentPlayer.credits;
+    if (prevCreditsRef.current !== null && prevCreditsRef.current !== credits) {
+      const delta = credits - prevCreditsRef.current;
+      animEmit({ type: 'credits-change', delta });
+    }
+    prevCreditsRef.current = credits;
+  }, [currentPlayer?.credits, animEmit]);
 
   // "Your Turn!" popup on turn start
   const prevTurnRef = useRef<string | null>(null);
@@ -1431,7 +1450,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                       <span className="text-amber-400">★</span>
                       <span className="text-amber-400 font-bold text-lg">{currentPlayer.fame}</span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div ref={setCreditCounterRef} className="flex items-center gap-1">
                       <span className="text-amber-300 text-sm">💰</span>
                       <span className="text-amber-300 font-semibold">{currentPlayer.credits}</span>
                     </div>
@@ -1749,7 +1768,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                       {currentPlayer.fame}
                     </motion.span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div ref={setCreditCounterRef} className="flex items-center gap-1">
                     <span className="text-amber-300 text-sm">💰</span>
                     <motion.span
                       key={`credits-${currentPlayer.credits}`}
