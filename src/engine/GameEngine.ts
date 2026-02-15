@@ -352,6 +352,7 @@ export class GameEngine {
       pendingAction: null,
       hasRevealedInfo: false,
       turnStartSnapshot: null,
+      actionHistory: [],
       extraTurnQueued: false,
       gameOver: false,
       winner: null,
@@ -523,41 +524,101 @@ export class GameEngine {
       hazardDeck: this.state.hazardDeck,
       pendingMissionReplacements: this.state.pendingMissionReplacements,
     });
+    // Also clear action history at start of turn
+    this.state.actionHistory = [];
   }
 
-  // Restart the current turn (only if no info revealed)
+  // Push a snapshot before each action for granular undo
+  private pushActionSnapshot(): void {
+    if (this.state.hasRevealedInfo) return; // Can't undo after info revealed
+    this.state.actionHistory.push(JSON.stringify({
+      players: this.state.players,
+      currentPlayerIndex: this.state.currentPlayerIndex,
+      turn: this.state.turn,
+      phase: this.state.phase,
+      trackMissions: this.state.trackMissions,
+      missionPools: this.state.missionPools,
+      marketStacks: this.state.marketStacks,
+      hazardDeck: this.state.hazardDeck,
+      pendingMissionReplacements: this.state.pendingMissionReplacements,
+    }));
+  }
+
+  // Undo the last action (granular) or restart turn if no actions taken
   restartTurn(): boolean {
-    if (this.state.hasRevealedInfo || !this.state.turnStartSnapshot) {
-      return false;
+    // If we have action history, undo the last action
+    if (this.state.actionHistory.length > 0 && !this.state.hasRevealedInfo) {
+      const snapshot = JSON.parse(this.state.actionHistory.pop()!);
+      this.state.players = snapshot.players;
+      this.state.currentPlayerIndex = snapshot.currentPlayerIndex;
+      this.state.turn = snapshot.turn;
+      this.state.phase = snapshot.phase;
+      this.state.trackMissions = snapshot.trackMissions;
+      this.state.missionPools = snapshot.missionPools;
+      this.state.marketStacks = snapshot.marketStacks;
+      this.state.hazardDeck = snapshot.hazardDeck;
+      this.state.pendingMissionReplacements = snapshot.pendingMissionReplacements;
+      this.state.pendingAction = null;
+
+      this.log(`${this.getCurrentPlayer().name} undid their last action`, 'info');
+      return true;
     }
 
-    const snapshot = JSON.parse(this.state.turnStartSnapshot);
-    this.state.players = snapshot.players;
-    this.state.currentPlayerIndex = snapshot.currentPlayerIndex;
-    this.state.turn = snapshot.turn;
-    this.state.phase = snapshot.phase;
-    this.state.trackMissions = snapshot.trackMissions;
-    this.state.missionPools = snapshot.missionPools;
-    this.state.marketStacks = snapshot.marketStacks;
-    this.state.hazardDeck = snapshot.hazardDeck;
-    this.state.pendingMissionReplacements = snapshot.pendingMissionReplacements;
-    this.state.pendingAction = null;
-    this.state.hasRevealedInfo = false;
+    // Fallback to turn start snapshot
+    if (!this.state.hasRevealedInfo && this.state.turnStartSnapshot) {
+      const snapshot = JSON.parse(this.state.turnStartSnapshot);
+      this.state.players = snapshot.players;
+      this.state.currentPlayerIndex = snapshot.currentPlayerIndex;
+      this.state.turn = snapshot.turn;
+      this.state.phase = snapshot.phase;
+      this.state.trackMissions = snapshot.trackMissions;
+      this.state.missionPools = snapshot.missionPools;
+      this.state.marketStacks = snapshot.marketStacks;
+      this.state.hazardDeck = snapshot.hazardDeck;
+      this.state.pendingMissionReplacements = snapshot.pendingMissionReplacements;
+      this.state.pendingAction = null;
+      this.state.actionHistory = [];
 
-    this.log(`${this.getCurrentPlayer().name} restarted their turn`, 'info');
-    return true;
+      this.log(`${this.getCurrentPlayer().name} restarted their turn`, 'info');
+      return true;
+    }
+
+    return false;
   }
 
-  // Check if restart/undo is allowed
+  // Check if undo is allowed
   canRestartTurn(): boolean {
-    return !this.state.hasRevealedInfo && this.state.turnStartSnapshot !== null;
+    if (this.state.hasRevealedInfo) return false;
+    return this.state.actionHistory.length > 0 || this.state.turnStartSnapshot !== null;
   }
 
   private enterInitialPhase(): void {
     const player = this.getCurrentPlayer();
     this.state.phase = 'initial';
 
-    // 1. Reveal Hazard Cards in hand
+    // 1. Resolve start-of-turn card effects FIRST (installations give power)
+    this.applyInstallationEffects(player);
+
+    // 2. Apply captain turn-start abilities
+    if (player.captain.ability.turnStart === 'credit') {
+      player.credits += 1;
+      this.log(`${player.name}'s Tycoon ability: +1 Credit`, 'action');
+    } else if (player.captain.ability.turnStart === 'powerToHighest') {
+      const highest = getHighestSystem(player.currentPower);
+      if (player.currentPower[highest] <= 2) {
+        player.currentPower[highest] = Math.min(MAX_POWER, player.currentPower[highest] + 1);
+        this.log(`${player.name}'s Veteran ability: +1 ${highest} power`, 'action');
+      } else {
+        this.log(`${player.name}'s Veteran ability: skipped (${highest} already at ${player.currentPower[highest]})`, 'info');
+      }
+    }
+
+    // Navigator free move
+    if (player.captain.ability.freeMove) {
+      player.movesRemaining += player.captain.ability.freeMove;
+    }
+
+    // 3. Reveal Hazard Cards in hand (AFTER installations/captains have given power)
     const hazardsInHand = player.hand.filter(c => c.type === 'hazard');
 
     if (hazardsInHand.length > 0) {
@@ -575,7 +636,7 @@ export class GameEngine {
         const hazardCard = hazard as HazardCard & { instanceId: string };
         this.log(`${player.name} reveals: ${hazardCard.title} - ${hazardCard.effect}`, 'hazard');
 
-        // Apply immediate hazard effects
+        // Apply immediate hazard effects (e.g., Static Overload: -1⚡ from a system)
         this.applyHazardRevealEffect(player, hazardCard);
 
         // Ghost captain ability: draw a card and gain a credit when revealing hazard
@@ -584,28 +645,6 @@ export class GameEngine {
           this.log(`${player.name}'s Ghost ability: +1 card`, 'action');
         }
       }
-    }
-
-    // 2. Resolve any start-of-turn card effects (from installations)
-    this.applyInstallationEffects(player);
-
-    // 3. Apply captain turn-start abilities
-    if (player.captain.ability.turnStart === 'credit') {
-      player.credits += 1;
-      this.log(`${player.name}'s Tycoon ability: +1 Credit`, 'action');
-    } else if (player.captain.ability.turnStart === 'powerToHighest') {
-      const highest = getHighestSystem(player.currentPower);
-      if (player.currentPower[highest] <= 2) {
-        player.currentPower[highest] = Math.min(MAX_POWER, player.currentPower[highest] + 1);
-        this.log(`${player.name}'s Veteran ability: +1 ${highest} power`, 'action');
-      } else {
-        this.log(`${player.name}'s Veteran ability: skipped (${highest} already at ${player.currentPower[highest]})`, 'info');
-      }
-    }
-
-    // Navigator free move
-    if (player.captain.ability.freeMove) {
-      player.movesRemaining += player.captain.ability.freeMove;
     }
 
     // If no hazards to reveal, go directly to action phase
@@ -1555,12 +1594,11 @@ export class GameEngine {
     player.buyDiscount = 0;
     player.installDiscount = 0;
 
-    // Remove old installation if present - purchased cards go back to deck (shuffled)
+    // Remove old installation if present - goes to discard pile
     const oldInstallation = player.installations[targetSystem];
     if (oldInstallation) {
-      player.deck.push(oldInstallation);
-      player.deck = shuffle(player.deck);
-      this.log(`  ${oldInstallation.title} returned to deck`, 'info');
+      player.discard.push(oldInstallation);
+      this.log(`  ${oldInstallation.title} returned to discard`, 'info');
     }
 
     // Install the new card directly
@@ -1598,13 +1636,22 @@ export class GameEngine {
     const mission = trackMission.mission;
     const requirements = mission.requirements;
 
-    // Check power requirements (with mission discount)
+    // Check power requirements (with mission discount distributed as total budget)
+    let discountRemaining = player.missionDiscount;
+    let totalDeficit = 0;
     for (const system of SYSTEMS) {
-      const required = (requirements[system] ?? 0) - player.missionDiscount;
+      const base = requirements[system] ?? 0;
+      if (base <= 0) continue;
+      const discountForThis = Math.min(base, discountRemaining);
+      discountRemaining -= discountForThis;
+      const required = base - discountForThis;
       if (required > 0 && player.currentPower[system] < required) {
-        if (verbose) this.log(`Mission check: Need ${required} ${system} power, have ${player.currentPower[system]}`, 'info');
-        return false;
+        totalDeficit += required - player.currentPower[system];
       }
+    }
+    if (totalDeficit > 0) {
+      if (verbose) this.log(`Mission check: Not enough power (deficit: ${totalDeficit})`, 'info');
+      return false;
     }
 
     // Check for Warrant Issued hazard (missions cost +2 credits)
@@ -1625,10 +1672,14 @@ export class GameEngine {
     const mission = trackMission.mission;
     const requirements = mission.requirements;
 
-    // Spend power (with discount)
+    // Spend power (with discount distributed as total budget across systems)
+    let spendDiscountRemaining = player.missionDiscount;
     for (const system of SYSTEMS) {
-      let required = requirements[system] ?? 0;
-      required = Math.max(0, required - player.missionDiscount);
+      const base = requirements[system] ?? 0;
+      if (base <= 0) continue;
+      const discountForThis = Math.min(base, spendDiscountRemaining);
+      spendDiscountRemaining -= discountForThis;
+      const required = Math.max(0, base - discountForThis);
       if (required > 0) {
         player.currentPower[system] -= required;
       }
@@ -1965,13 +2016,11 @@ export class GameEngine {
     player.credits -= cost;
     player.installDiscount = 0;
 
-    // Remove old installation if present - purchased cards go back to deck (shuffled)
+    // Remove old installation if present - goes to discard pile
     const oldInstallation = player.installations[targetSystem];
     if (oldInstallation) {
-      // Put the old card back in the deck and shuffle
-      player.deck.push(oldInstallation);
-      player.deck = shuffle(player.deck);
-      this.log(`  ${oldInstallation.title} returned to deck`, 'info');
+      player.discard.push(oldInstallation);
+      this.log(`  ${oldInstallation.title} returned to discard`, 'info');
     }
 
     // Install new card
@@ -2050,6 +2099,12 @@ export class GameEngine {
 
   dispatch(action: GameAction): boolean {
     const player = this.getCurrentPlayer();
+
+    // Save snapshot before each action for granular undo
+    // (skip END_TURN and RESTART_TURN since those change turns)
+    if (action.type !== 'END_TURN' && action.type !== 'RESTART_TURN') {
+      this.pushActionSnapshot();
+    }
 
     switch (action.type) {
       case 'PLAY_CARD':

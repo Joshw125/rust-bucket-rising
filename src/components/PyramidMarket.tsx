@@ -220,6 +220,7 @@ interface MarketStackComponentProps {
   station: 1 | 3 | 5;
   stackIndex: number;
   currentPlayer: Player;
+  canReveal?: boolean; // Whether this stack can be revealed (not already revealed another this turn)
   onBuyCard?: () => void;
   onBuyAndInstall?: (targetSystem: SystemType) => void;
   onViewCard?: (card: CardInstance) => void;
@@ -231,6 +232,7 @@ function MarketStackComponent({
   stackInfo,
   station,
   currentPlayer,
+  canReveal = true,
   onBuyCard,
   onBuyAndInstall,
   onViewCard,
@@ -273,22 +275,24 @@ function MarketStackComponent({
   const canBuyAndInstall = isAtStation && isInstallable && currentPlayer.credits >= totalCost && revealed;
 
   // If not revealed, show face-down stack (grayed if not at station)
+  const canClickToReveal = isAtStation && canReveal;
+
   if (!revealed) {
     return (
       <div
         className={clsx(
           'relative flex flex-col items-center',
-          isAtStation ? 'cursor-pointer' : 'opacity-50',
+          canClickToReveal ? 'cursor-pointer' : 'opacity-50',
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onClick={() => {
-          if (isAtStation) onReveal?.();
+          if (canClickToReveal) onReveal?.();
         }}
       >
         <div className={clsx(
           'transition-transform duration-200',
-          isHovered && isAtStation && 'scale-110 -translate-y-2',
+          isHovered && canClickToReveal && 'scale-110 -translate-y-2',
         )}>
           {/* Stack of face-down cards */}
           <div className="relative">
@@ -307,8 +311,8 @@ function MarketStackComponent({
           {cards.length}
         </div>
 
-        {/* "Browse" hint when at station */}
-        {isHovered && isAtStation && (
+        {/* "Browse" hint when at station and can reveal */}
+        {isHovered && canClickToReveal && (
           <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 z-20">
             <span className="px-2 py-1 bg-amber-500 text-slate-900 text-xs font-bold rounded whitespace-nowrap">
               Click to Browse
@@ -319,7 +323,7 @@ function MarketStackComponent({
     );
   }
 
-  // Revealed stack
+  // Revealed stack — same fixed height as unrevealed, buttons appear as overlay
   return (
     <div
       className="relative flex flex-col items-center"
@@ -347,78 +351,76 @@ function MarketStackComponent({
         </div>
       </div>
 
-      {/* Buy buttons - flow below the card, always in the hover area */}
-      <div className={clsx(
-        'flex flex-col items-center gap-1 z-20',
-        compact ? 'mt-1 min-h-[40px]' : 'mt-2 min-h-[52px]',
-      )}>
-        {isHovered && isAtStation && (
-          <>
-            {/* Buy only */}
-            <button
-              className={clsx(
-                'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
-                canBuy
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
-                  : 'bg-slate-700 text-slate-500 cursor-not-allowed',
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (canBuy) onBuyCard?.();
-              }}
-              disabled={!canBuy}
-            >
-              Buy ${buyCost}
-            </button>
-
-            {/* Buy + Install */}
-            {isInstallable && (
-              <div className="relative">
-                <button
-                  className={clsx(
-                    'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
-                    canBuyAndInstall
-                      ? 'bg-green-600 hover:bg-green-500 text-white'
-                      : 'bg-slate-700 text-slate-500 cursor-not-allowed',
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (canBuyAndInstall) setShowInstallMenu(!showInstallMenu);
-                  }}
-                  disabled={!canBuyAndInstall}
-                >
-                  +Install ${totalCost}
-                </button>
-
-                {/* System dropdown */}
-                {showInstallMenu && canBuyAndInstall && (
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex flex-col bg-slate-800 rounded border border-slate-600 shadow-xl overflow-hidden z-30">
-                    {SYSTEMS.map(sys => {
-                      const config = SYSTEM_CONFIG[sys];
-                      return (
-                        <button
-                          key={sys}
-                          className={clsx(
-                            'px-3 py-1.5 text-xs font-semibold hover:bg-slate-700 transition-colors whitespace-nowrap',
-                            config.textClass,
-                          )}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onBuyAndInstall?.(sys);
-                            setShowInstallMenu(false);
-                          }}
-                        >
-                          → {config.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+      {/* Buy buttons - absolutely positioned below card, overlapping next row */}
+      {isHovered && isAtStation && (
+        <div className={clsx(
+          'absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 z-30',
+          compact ? 'top-[116px]' : 'top-[144px]',
+        )}>
+          {/* Buy only */}
+          <button
+            className={clsx(
+              'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
+              canBuy
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+                : 'bg-slate-700 text-slate-500 cursor-not-allowed',
             )}
-          </>
-        )}
-      </div>
+            onClick={(e) => {
+              e.stopPropagation();
+              if (canBuy) onBuyCard?.();
+            }}
+            disabled={!canBuy}
+          >
+            Buy ${buyCost}
+          </button>
+
+          {/* Buy + Install */}
+          {isInstallable && (
+            <div className="relative">
+              <button
+                className={clsx(
+                  'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
+                  canBuyAndInstall
+                    ? 'bg-green-600 hover:bg-green-500 text-white'
+                    : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (canBuyAndInstall) setShowInstallMenu(!showInstallMenu);
+                }}
+                disabled={!canBuyAndInstall}
+              >
+                +Install ${totalCost}
+              </button>
+
+              {/* System dropdown */}
+              {showInstallMenu && canBuyAndInstall && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex flex-col bg-slate-800 rounded border border-slate-600 shadow-xl overflow-hidden z-30">
+                  {SYSTEMS.map(sys => {
+                    const config = SYSTEM_CONFIG[sys];
+                    return (
+                      <button
+                        key={sys}
+                        className={clsx(
+                          'px-3 py-1.5 text-xs font-semibold hover:bg-slate-700 transition-colors whitespace-nowrap',
+                          config.textClass,
+                        )}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onBuyAndInstall?.(sys);
+                          setShowInstallMenu(false);
+                        }}
+                      >
+                        → {config.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -431,6 +433,7 @@ interface MarketRowProps {
   station: 1 | 3 | 5;
   stackInfos: MarketStackInfo[];
   currentPlayer: Player;
+  canReveal?: boolean; // Whether new stacks can be revealed at this station
   onBuyCard?: (stackIndex: number) => void;
   onBuyAndInstall?: (stackIndex: number, targetSystem: SystemType) => void;
   onViewCard?: (card: CardInstance) => void;
@@ -442,6 +445,7 @@ function MarketRow({
   station,
   stackInfos,
   currentPlayer,
+  canReveal = true,
   onBuyCard,
   onBuyAndInstall,
   onViewCard,
@@ -494,6 +498,7 @@ function MarketRow({
             station={station}
             stackIndex={idx}
             currentPlayer={currentPlayer}
+            canReveal={canReveal}
             onBuyCard={() => onBuyCard?.(idx)}
             onBuyAndInstall={(sys) => onBuyAndInstall?.(idx, sys)}
             onViewCard={onViewCard}
@@ -550,11 +555,21 @@ export function PyramidMarket({
     }
   };
 
+  // Check if the player can reveal a new stack at this station (haven't revealed one yet this turn)
+  const canRevealAtStation = (station: 1 | 3 | 5): boolean => {
+    if (station === 1) return true; // T1 always reveals (no limit)
+    if (currentPlayer.location !== station) return false;
+    return revealedThisTurn[station] === false; // Haven't revealed any stack this turn
+  };
+
   // Handle reveal + browse for face-down stacks
   const handleRevealAndBrowse = (station: 1 | 3 | 5, stackIndex: number) => {
+    if (!canRevealAtStation(station)) return; // Already revealed a stack this turn
     onRevealStack?.(station, stackIndex);
-    // Open browser modal after revealing
-    setBrowsingStack({ station, stackIndex });
+    // Only open browser for T2/T3 (T1 is always just top card)
+    if (station !== 1) {
+      setBrowsingStack({ station, stackIndex });
+    }
   };
 
   const browsingStackInfo = browsingStack
@@ -568,6 +583,7 @@ export function PyramidMarket({
         station={5}
         stackInfos={marketStacks[5]}
         currentPlayer={currentPlayer}
+        canReveal={canRevealAtStation(5)}
         onBuyCard={(idx) => onBuyCard?.(5, idx)}
         onBuyAndInstall={(idx, sys) => onBuyAndInstall?.(5, idx, sys)}
         onViewCard={(card) => {
@@ -584,6 +600,7 @@ export function PyramidMarket({
         station={3}
         stackInfos={marketStacks[3]}
         currentPlayer={currentPlayer}
+        canReveal={canRevealAtStation(3)}
         onBuyCard={(idx) => onBuyCard?.(3, idx)}
         onBuyAndInstall={(idx, sys) => onBuyAndInstall?.(3, idx, sys)}
         onViewCard={(card) => {
@@ -600,6 +617,7 @@ export function PyramidMarket({
         station={1}
         stackInfos={marketStacks[1]}
         currentPlayer={currentPlayer}
+        canReveal={canRevealAtStation(1)}
         onBuyCard={(idx) => onBuyCard?.(1, idx)}
         onBuyAndInstall={(idx, sys) => onBuyAndInstall?.(1, idx, sys)}
         onViewCard={onViewCard}

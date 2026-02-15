@@ -1001,6 +1001,36 @@ function PowerChoiceModal() {
     { key: 'logistics' as SystemType, name: 'Logistics', color: 'bg-logistics', textColor: 'text-logistics-light' },
   ];
 
+  // Quick path: single power — just click a system button
+  if (total === 1) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setPendingPowerChoice(null)}>
+        <div className="game-panel p-4 max-w-xs" onClick={(e) => e.stopPropagation()}>
+          <div className="text-center mb-3">
+            <div className="text-amber-400 font-bold text-sm">{pendingPowerChoice.cardTitle}</div>
+            <div className="text-slate-400 text-xs">+1⚡ — Pick a system</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {systems.map((sys) => (
+              <button
+                key={sys.key}
+                className={clsx(
+                  'py-2 rounded-lg font-bold text-sm transition-all',
+                  sys.color, 'hover:brightness-110 text-white shadow-lg',
+                )}
+                onClick={() => {
+                  confirmPowerChoice({ weapons: 0, computers: 0, engines: 0, logistics: 0, [sys.key]: 1 });
+                }}
+              >
+                {sys.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const adjust = (sys: SystemType, delta: number) => {
     setAllocation((prev) => {
       const newVal = Math.max(0, prev[sys] + delta);

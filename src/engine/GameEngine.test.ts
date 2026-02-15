@@ -987,8 +987,8 @@ describe('Installations', () => {
       });
 
       expect(player.installations.weapons?.instanceId).toBe(card2.instanceId);
-      // Old installation goes back to the deck (shuffled), not discard
-      expect(player.deck.some(c => c.instanceId === card1.instanceId)).toBe(true);
+      // Old installation goes to discard pile
+      expect(player.discard.some(c => c.instanceId === card1.instanceId)).toBe(true);
     });
   });
 });

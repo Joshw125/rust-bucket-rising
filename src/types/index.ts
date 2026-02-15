@@ -430,6 +430,7 @@ export interface GameState {
   // Undo/Restart tracking
   hasRevealedInfo: boolean; // True if mission flipped, card revealed from stack, etc.
   turnStartSnapshot: string | null; // JSON snapshot of state at turn start (for restart)
+  actionHistory: string[]; // Stack of JSON snapshots for granular undo (one per action)
 
   // Extra turn tracking (Temporal Jump)
   extraTurnQueued: boolean;

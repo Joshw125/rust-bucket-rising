@@ -61,28 +61,32 @@ const ZONE_STYLES = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Track Node Component (station icon + number node + player tokens only)
+// Track Location Column (station icon + number node + mission card in one column)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface TrackNodeProps {
+interface TrackLocationProps {
   location: number;
+  mission: TrackMission | null;
   playersHere: Player[];
   allPlayers: Player[];
   currentPlayerId: number;
   isStation: boolean;
   hasCurrentPlayer: boolean;
+  onViewMission?: (mission: TrackMission) => void;
   compact?: boolean;
 }
 
-function TrackNode({
+function TrackLocation({
   location,
+  mission,
   playersHere,
   allPlayers,
   currentPlayerId,
   isStation,
   hasCurrentPlayer,
+  onViewMission,
   compact,
-}: TrackNodeProps) {
+}: TrackLocationProps) {
   const zone = ZONE_MAP[location];
   const zoneStyle = ZONE_STYLES[zone];
 
@@ -146,42 +150,54 @@ function TrackNode({
           );
         })}
       </div>
+
+      {/* Mission card directly below its number */}
+      <div className={compact ? 'mt-1' : 'mt-2'}>
+        {mission ? (
+          <div
+            className="cursor-pointer transition-transform hover:scale-105"
+            onClick={() => onViewMission?.(mission)}
+          >
+            <MissionCard
+              mission={mission.mission}
+              size={compact ? 'small' : 'large'}
+              showBack={!mission.revealed}
+            />
+          </div>
+        ) : (
+          <div className={clsx(
+            'rounded-lg border-2 border-dashed border-slate-700/30 bg-slate-900/20 flex items-center justify-center',
+            compact ? 'w-20 h-28' : 'w-40 h-56',
+          )}>
+            <span className="text-slate-600 text-xs">No Mission</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mission Card Slot Component
+// Zone Label Divider (sits between location columns)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface MissionSlotProps {
-  mission: TrackMission | null;
-  onViewMission?: (mission: TrackMission) => void;
+interface ZoneLabelProps {
+  zone: 'near' | 'mid' | 'deep';
   compact?: boolean;
 }
 
-function MissionSlot({ mission, onViewMission, compact }: MissionSlotProps) {
+function ZoneLabel({ zone, compact }: ZoneLabelProps) {
+  const style = ZONE_STYLES[zone];
   return (
-    <div className="flex flex-col items-center">
-      {mission ? (
-        <div
-          className="cursor-pointer transition-transform hover:scale-105"
-          onClick={() => onViewMission?.(mission)}
-        >
-          <MissionCard
-            mission={mission.mission}
-            size={compact ? 'small' : 'large'}
-            showBack={!mission.revealed}
-          />
-        </div>
-      ) : (
-        <div className={clsx(
-          'rounded-lg border-2 border-dashed border-slate-700/30 bg-slate-900/20 flex items-center justify-center',
-          compact ? 'w-20 h-28' : 'w-40 h-56',
-        )}>
-          <span className="text-slate-600 text-xs">No Mission</span>
-        </div>
-      )}
+    <div className="flex items-center self-start" style={{ marginTop: compact ? 38 : 60 }}>
+      <span className={clsx(
+        'font-bold px-1.5 py-0.5 rounded',
+        compact ? 'text-[8px]' : 'text-[10px]',
+        style.text,
+        style.labelBg,
+      )}>
+        {compact ? zone.toUpperCase() : style.label}
+      </span>
     </div>
   );
 }
@@ -207,15 +223,15 @@ export function SpaceTrack({
   const currentPlayer = state.players.find(p => p.id === currentPlayerId);
 
   // Zone labels placed between the first and second location of each zone
-  const zoneLabelsAfter: Record<number, { zone: 'near' | 'mid' | 'deep' }> = {
-    1: { zone: 'near' },  // NEAR SPACE between positions 1 and 2
-    3: { zone: 'mid' },   // MID SPACE between positions 3 and 4
-    5: { zone: 'deep' },  // DEEP SPACE between positions 5 and 6
+  const zoneLabelsAfter: Record<number, 'near' | 'mid' | 'deep'> = {
+    1: 'near',   // NEAR SPACE between positions 1 and 2
+    3: 'mid',    // MID SPACE between positions 3 and 4
+    5: 'deep',   // DEEP SPACE between positions 5 and 6
   };
 
   return (
     <div className="flex flex-col items-center">
-      {/* Top row: Station icons + number nodes with zone labels between them */}
+      {/* Track with locations as full columns (number + mission) and zone labels between */}
       <div className="relative">
         {/* Connecting line behind the nodes */}
         <div className={clsx(
@@ -223,54 +239,33 @@ export function SpaceTrack({
           compact ? 'top-[38px]' : 'top-[60px]',
         )} />
 
-        {/* Nodes + zone labels */}
-        <div className={clsx('flex items-start', compact ? 'gap-2' : 'gap-4')}>
+        {/* Location columns with zone labels between them */}
+        <div className={clsx('flex items-start', compact ? 'gap-1' : 'gap-2')}>
           {locations.map((loc) => {
-            const zoneLabel = zoneLabelsAfter[loc];
+            const zoneAfter = zoneLabelsAfter[loc];
 
             return (
               <Fragment key={loc}>
-                <TrackNode
+                <TrackLocation
                   location={loc}
+                  mission={state.trackMissions[loc]}
                   playersHere={playersByLocation[loc]}
                   allPlayers={state.players}
                   currentPlayerId={currentPlayerId}
                   isStation={STATION_LOCATIONS.includes(loc as 1 | 3 | 5)}
                   hasCurrentPlayer={currentPlayer?.location === loc}
+                  onViewMission={onViewMission}
                   compact={compact}
                 />
 
-                {/* Zone label sits between the two positions of each zone */}
-                {zoneLabel && (
-                  <div className="flex items-center self-center">
-                    <span className={clsx(
-                      'font-bold px-1.5 py-0.5 rounded',
-                      compact ? 'text-[8px]' : 'text-[10px]',
-                      ZONE_STYLES[zoneLabel.zone].text,
-                      ZONE_STYLES[zoneLabel.zone].labelBg,
-                    )}>
-                      {compact
-                        ? zoneLabel.zone.toUpperCase()
-                        : ZONE_STYLES[zoneLabel.zone].label}
-                    </span>
-                  </div>
+                {/* Zone label between this location and the next */}
+                {zoneAfter && (
+                  <ZoneLabel zone={zoneAfter} compact={compact} />
                 )}
               </Fragment>
             );
           })}
         </div>
-      </div>
-
-      {/* Bottom row: Mission cards evenly spaced under each location */}
-      <div className={clsx('flex', compact ? 'gap-2 mt-1' : 'gap-4 mt-2')}>
-        {locations.map((loc) => (
-          <MissionSlot
-            key={loc}
-            mission={state.trackMissions[loc]}
-            onViewMission={onViewMission}
-            compact={compact}
-          />
-        ))}
       </div>
     </div>
   );

@@ -15,11 +15,15 @@ interface FameTrackProps {
 
 export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
   // Build a map of fame value → players at that position
+  // Players outside 0..VICTORY_THRESHOLD appear in overflow markers only
   const positionMap = new Map<number, Array<{ player: Player; index: number }>>();
   players.forEach((player, index) => {
     const fame = player.fame;
-    if (!positionMap.has(fame)) positionMap.set(fame, []);
-    positionMap.get(fame)!.push({ player, index });
+    if (fame >= 0 && fame <= VICTORY_THRESHOLD) {
+      if (!positionMap.has(fame)) positionMap.set(fame, []);
+      positionMap.get(fame)!.push({ player, index });
+    }
+    // Players < 0 or > VICTORY_THRESHOLD are handled by overflow markers
   });
 
   const leadingFame = Math.max(...players.map(p => p.fame));
@@ -58,8 +62,23 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
         </div>
       </div>
 
-      {/* Full-width track — cells stretch to fill available space */}
+      {/* Full-width track — cells stretch to fill available space, with overflow markers */}
       <div className="flex gap-0 w-full">
+        {/* Overflow marker: − before 0 (for negative fame) */}
+        <div className="flex flex-col items-center relative border-r border-slate-800/60" style={{ width: 20, flexShrink: 0 }}>
+          <div className="h-5 flex items-end justify-center gap-0.5 mb-0.5">
+            {(positionMap.get(-1) ?? []).map(({ player, index }) => {
+              const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+              return (
+                <div key={player.name} className={clsx('w-3.5 h-3.5 rounded-full flex items-center justify-center', color.bg)} title={`${player.name}: ${player.fame} Fame`}>
+                  <span className="text-[7px] text-white font-bold drop-shadow">{player.name[0]}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="w-full h-4 flex items-center justify-center text-[8px] font-semibold rounded-sm bg-red-900/30 text-red-400">−</div>
+        </div>
+
         {cells.map((cellValue) => {
           const playersHere = positionMap.get(cellValue) ?? [];
           const isFinishLine = cellValue === VICTORY_THRESHOLD;
@@ -113,13 +132,27 @@ export function FameTrack({ players, currentPlayerIndex }: FameTrackProps) {
                       : 'bg-slate-900/30 text-slate-600',
                 playersHere.length > 0 && !isFinishLine && 'bg-slate-800/50',
               )}>
-                {/* Show number on milestones, 0, finish, and every 5th cell.
-                    Hide numbers on other cells at small widths for cleanliness */}
                 {(isMilestone || isZero || isFinishLine || cellValue === 1) ? cellValue : ''}
               </div>
             </div>
           );
         })}
+
+        {/* Overflow marker: + after 25 (for fame > threshold) */}
+        <div className="flex flex-col items-center relative border-l border-slate-800/60" style={{ width: 20, flexShrink: 0 }}>
+          <div className="h-5 flex items-end justify-center gap-0.5 mb-0.5">
+            {players.filter(p => p.fame > VICTORY_THRESHOLD).map((player) => {
+              const index = players.indexOf(player);
+              const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+              return (
+                <div key={player.name} className={clsx('w-3.5 h-3.5 rounded-full flex items-center justify-center', color.bg, 'ring-1 ring-amber-400')} title={`${player.name}: ${player.fame} Fame`}>
+                  <span className="text-[7px] text-white font-bold drop-shadow">{player.name[0]}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="w-full h-4 flex items-center justify-center text-[8px] font-semibold rounded-sm bg-amber-700/30 text-amber-300">+</div>
+        </div>
       </div>
     </div>
   );
