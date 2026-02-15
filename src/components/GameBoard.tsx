@@ -1554,8 +1554,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             />
           )}
 
-          {/* Top row: Hand (left) | Market (center-right) */}
-          <div className="flex-none flex items-start px-4 py-2">
+          {/* Top row: Hand (left) | Market (center-right) - z-20 so buy buttons float above space track */}
+          <div className="flex-none flex items-start px-4 py-2 relative z-20">
             {/* Hand Cards - fanned like cards held in hand */}
             <ScaledSection scale={scales.hand} fixedWidth={600} fixedHeight={340} origin="top left" className="flex-none ml-2">
               <HandDisplay

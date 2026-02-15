@@ -322,7 +322,7 @@ function MarketStackComponent({
   // Revealed stack
   return (
     <div
-      className={clsx('relative flex flex-col items-center', compact ? 'pb-10' : 'pb-16')}
+      className="relative flex flex-col items-center"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => {
         setIsHovered(false);
@@ -331,7 +331,7 @@ function MarketStackComponent({
     >
       {/* Card stack */}
       <div className={clsx(
-        'transition-transform duration-200',
+        'relative transition-transform duration-200',
         isHovered && 'scale-110 -translate-y-2',
       )}>
         <CardStack
@@ -340,86 +340,85 @@ function MarketStackComponent({
           showTopCard={true}
           onClick={() => onViewCard?.(topCard)}
         />
-      </div>
 
-      {/* Stack count */}
-      <div className={clsx(
-        'absolute -right-1 bg-slate-900 text-amber-400 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-600/50',
-        compact ? 'top-[108px]' : 'top-[136px]',
-      )}>
-        {cards.length}
-      </div>
-
-      {/* Buy buttons - show on hover, positioned inside hover area */}
-      {isHovered && isAtStation && (
-        <div className={clsx(
-          'absolute left-1/2 -translate-x-1/2 flex flex-col gap-1 z-20',
-          compact ? 'top-[118px]' : 'top-[150px]',
-        )}>
-          {/* Buy only */}
-          <button
-            className={clsx(
-              'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
-              canBuy
-                ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
-                : 'bg-slate-700 text-slate-500 cursor-not-allowed',
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (canBuy) onBuyCard?.();
-            }}
-            disabled={!canBuy}
-          >
-            Buy ${buyCost}
-          </button>
-
-          {/* Buy + Install */}
-          {isInstallable && (
-            <div className="relative">
-              <button
-                className={clsx(
-                  'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
-                  canBuyAndInstall
-                    ? 'bg-green-600 hover:bg-green-500 text-white'
-                    : 'bg-slate-700 text-slate-500 cursor-not-allowed',
-                )}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (canBuyAndInstall) setShowInstallMenu(!showInstallMenu);
-                }}
-                disabled={!canBuyAndInstall}
-              >
-                +Install ${totalCost}
-              </button>
-
-              {/* System dropdown */}
-              {showInstallMenu && canBuyAndInstall && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex flex-col bg-slate-800 rounded border border-slate-600 shadow-xl overflow-hidden z-30">
-                  {SYSTEMS.map(sys => {
-                    const config = SYSTEM_CONFIG[sys];
-                    return (
-                      <button
-                        key={sys}
-                        className={clsx(
-                          'px-3 py-1.5 text-xs font-semibold hover:bg-slate-700 transition-colors whitespace-nowrap',
-                          config.textClass,
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onBuyAndInstall?.(sys);
-                          setShowInstallMenu(false);
-                        }}
-                      >
-                        → {config.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+        {/* Stack count - positioned relative to card */}
+        <div className="absolute -bottom-1 -right-1 bg-slate-900 text-amber-400 text-xs font-bold px-1.5 py-0.5 rounded border border-amber-600/50">
+          {cards.length}
         </div>
-      )}
+      </div>
+
+      {/* Buy buttons - flow below the card, always in the hover area */}
+      <div className={clsx(
+        'flex flex-col items-center gap-1 z-20',
+        compact ? 'mt-1 min-h-[40px]' : 'mt-2 min-h-[52px]',
+      )}>
+        {isHovered && isAtStation && (
+          <>
+            {/* Buy only */}
+            <button
+              className={clsx(
+                'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
+                canBuy
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canBuy) onBuyCard?.();
+              }}
+              disabled={!canBuy}
+            >
+              Buy ${buyCost}
+            </button>
+
+            {/* Buy + Install */}
+            {isInstallable && (
+              <div className="relative">
+                <button
+                  className={clsx(
+                    'px-2 py-1 rounded text-xs font-bold whitespace-nowrap transition-all shadow-lg',
+                    canBuyAndInstall
+                      ? 'bg-green-600 hover:bg-green-500 text-white'
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canBuyAndInstall) setShowInstallMenu(!showInstallMenu);
+                  }}
+                  disabled={!canBuyAndInstall}
+                >
+                  +Install ${totalCost}
+                </button>
+
+                {/* System dropdown */}
+                {showInstallMenu && canBuyAndInstall && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex flex-col bg-slate-800 rounded border border-slate-600 shadow-xl overflow-hidden z-30">
+                    {SYSTEMS.map(sys => {
+                      const config = SYSTEM_CONFIG[sys];
+                      return (
+                        <button
+                          key={sys}
+                          className={clsx(
+                            'px-3 py-1.5 text-xs font-semibold hover:bg-slate-700 transition-colors whitespace-nowrap',
+                            config.textClass,
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onBuyAndInstall?.(sys);
+                            setShowInstallMenu(false);
+                          }}
+                        >
+                          → {config.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

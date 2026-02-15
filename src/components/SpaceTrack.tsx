@@ -2,6 +2,7 @@
 // RUST BUCKET RISING - Space Track Component (Straight Line Design)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { Fragment } from 'react';
 import { clsx } from 'clsx';
 import type { GameState, Player, TrackMission } from '@/types';
 import { MissionCard } from './Card';
@@ -40,18 +41,21 @@ const ZONE_STYLES = {
     trackBg: 'bg-near/20',
     border: 'border-near/60',
     text: 'text-near',
+    labelBg: 'bg-near/15',
     label: 'NEAR SPACE'
   },
   mid: {
     trackBg: 'bg-mid/20',
     border: 'border-mid/60',
     text: 'text-mid',
+    labelBg: 'bg-mid/15',
     label: 'MID SPACE'
   },
   deep: {
     trackBg: 'bg-deep/20',
     border: 'border-deep/60',
     text: 'text-deep',
+    labelBg: 'bg-deep/15',
     label: 'DEEP SPACE'
   },
 };
@@ -193,24 +197,17 @@ export function SpaceTrack({
 
   const currentPlayer = state.players.find(p => p.id === currentPlayerId);
 
+  // Zone boundary labels placed between locations:
+  // NEAR SPACE between 1-2 (after location 2), MID SPACE between 3-4 (after location 4), DEEP SPACE between 5-6 (after location 6 doesn't exist, so after 5)
+  const zoneLabelsAfter: Record<number, { zone: 'near' | 'mid' | 'deep' }> = {
+    1: { zone: 'near' },  // NEAR SPACE label between positions 1 and 2
+    3: { zone: 'mid' },   // MID SPACE label between positions 3 and 4
+    5: { zone: 'deep' },  // DEEP SPACE label between positions 5 and 6
+  };
+
   return (
     <div className="flex flex-col items-center">
-      {/* Zone labels */}
-      <div className={clsx('flex items-center justify-center gap-2', compact ? 'mb-1' : 'mb-2')}>
-        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.near.text, 'bg-near/20')}>
-          {compact ? 'NEAR' : ZONE_STYLES.near.label}
-        </span>
-        <span className="text-slate-600">→</span>
-        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.mid.text, 'bg-mid/20')}>
-          {compact ? 'MID' : ZONE_STYLES.mid.label}
-        </span>
-        <span className="text-slate-600">→</span>
-        <span className={clsx(compact ? 'text-[10px]' : 'text-xs', 'font-bold px-2 py-0.5 rounded', ZONE_STYLES.deep.text, 'bg-deep/20')}>
-          {compact ? 'DEEP' : ZONE_STYLES.deep.label}
-        </span>
-      </div>
-
-      {/* The track - straight horizontal line with locations */}
+      {/* The track - straight horizontal line with locations and zone labels interspersed */}
       <div className="relative flex items-start">
         {/* Connecting line behind the nodes */}
         <div className={clsx(
@@ -218,22 +215,46 @@ export function SpaceTrack({
           compact ? 'top-[38px]' : 'top-[60px]',
         )} />
 
-        {/* Location nodes */}
+        {/* Location nodes with zone labels between them */}
         <div className={clsx('flex items-start', compact ? 'gap-2' : 'gap-4')}>
-          {locations.map((loc) => (
-            <TrackLocation
-              key={loc}
-              location={loc}
-              mission={state.trackMissions[loc]}
-              playersHere={playersByLocation[loc]}
-              allPlayers={state.players}
-              currentPlayerId={currentPlayerId}
-              isStation={STATION_LOCATIONS.includes(loc as 1 | 3 | 5)}
-              hasCurrentPlayer={currentPlayer?.location === loc}
-              onViewMission={onViewMission}
-              compact={compact}
-            />
-          ))}
+          {locations.map((loc) => {
+            const zoneLabel = zoneLabelsAfter[loc];
+
+            return (
+              <Fragment key={loc}>
+                <TrackLocation
+                  location={loc}
+                  mission={state.trackMissions[loc]}
+                  playersHere={playersByLocation[loc]}
+                  allPlayers={state.players}
+                  currentPlayerId={currentPlayerId}
+                  isStation={STATION_LOCATIONS.includes(loc as 1 | 3 | 5)}
+                  hasCurrentPlayer={currentPlayer?.location === loc}
+                  onViewMission={onViewMission}
+                  compact={compact}
+                />
+
+                {/* Zone label between this location and the next */}
+                {zoneLabel && (
+                  <div className={clsx(
+                    'flex items-center self-center',
+                    compact ? '-mx-0.5' : '-mx-1',
+                  )}>
+                    <span className={clsx(
+                      'font-bold px-1.5 py-0.5 rounded',
+                      compact ? 'text-[8px]' : 'text-[10px]',
+                      ZONE_STYLES[zoneLabel.zone].text,
+                      ZONE_STYLES[zoneLabel.zone].labelBg,
+                    )}>
+                      {compact
+                        ? zoneLabel.zone.toUpperCase()
+                        : ZONE_STYLES[zoneLabel.zone].label}
+                    </span>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
     </div>
