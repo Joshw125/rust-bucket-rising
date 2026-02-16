@@ -472,6 +472,8 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
+      version: 2,
+      captainSelection: true,
       rooms: rooms.size,
       clients: clients.size,
       uptime: process.uptime(),
