@@ -226,7 +226,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
 
       case 'ROOM_CREATED':
       case 'ROOM_JOINED':
-        set({ room: message.room, error: null });
+        set({ room: message.room, playerId: message.playerId, error: null });
         break;
 
       case 'ROOM_UPDATE':
