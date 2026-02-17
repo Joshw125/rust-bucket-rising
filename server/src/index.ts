@@ -6,6 +6,9 @@
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import type { Room, RoomPlayer, ClientMessage, ServerMessage } from './types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,7 +19,35 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const ROOM_CODE_LENGTH = 4;
 const MAX_PLAYERS_PER_ROOM = 4;
 const ROOM_CLEANUP_INTERVAL = 60000; // 1 minute
-const ROOM_TIMEOUT = 3600000; // 1 hour
+const ROOM_TIMEOUT = 14400000; // 4 hours (was 1 hour)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics Logger
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const DATA_DIR = join(__dirname, '..', 'data');
+const GAMES_LOG = join(DATA_DIR, 'games.jsonl');
+
+// Ensure data directory exists
+try {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Could not create data directory:', e);
+}
+
+function logAnalytics(event: Record<string, unknown>): void {
+  try {
+    const entry = JSON.stringify({ ...event, timestamp: Date.now() }) + '\n';
+    appendFileSync(GAMES_LOG, entry);
+  } catch (e) {
+    // Analytics should never crash the server
+    console.warn('Analytics write failed:', e);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State
@@ -104,12 +135,17 @@ function getClientByPlayerId(playerId: string): ConnectedClient | undefined {
   return undefined;
 }
 
+function touchRoom(room: Room): void {
+  room.lastActivity = Date.now();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Room Management
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createRoom(hostId: string, hostName: string): Room {
   const roomId = uuidv4();
+  const now = Date.now();
   // Create room first with empty players so assignCaptainChoices works
   const room: Room = {
     id: roomId,
@@ -120,7 +156,9 @@ function createRoom(hostId: string, hostName: string): Room {
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     status: 'lobby',
     gameState: null,
-    createdAt: Date.now(),
+    stateHash: null,
+    lastActivity: now,
+    createdAt: now,
   };
   // Assign captain choices for the host (no existing players to conflict with)
   const hostChoices = assignCaptainChoices(room);
@@ -217,6 +255,8 @@ function handleJoinRoom(ws: WebSocket, client: ConnectedClient, roomCode: string
     return;
   }
 
+  touchRoom(room);
+
   // Allow rejoin if the game is in progress and a disconnected player matches by name
   if (room.status === 'playing') {
     const disconnectedPlayer = room.players.find(
@@ -233,9 +273,26 @@ function handleJoinRoom(ws: WebSocket, client: ConnectedClient, roomCode: string
 
       // Send full room state to the rejoining player
       send(ws, { type: 'ROOM_JOINED', room, playerId: disconnectedPlayer.id });
+
+      // If we have a stored game state snapshot, send it for resync
+      if (room.gameState) {
+        send(ws, {
+          type: 'STATE_SNAPSHOT',
+          snapshot: room.gameState,
+          stateHash: room.stateHash || '',
+        });
+      }
+
       // Notify others
       broadcast(room, { type: 'ROOM_UPDATE', room }, disconnectedPlayer.id);
       console.log(`Player "${playerName}" rejoined room ${roomCode}`);
+
+      logAnalytics({
+        event: 'player_rejoin',
+        roomCode: room.code,
+        playerName,
+        playerId: disconnectedPlayer.id,
+      });
       return;
     }
     send(ws, { type: 'ERROR', message: 'This game has already started.' });
@@ -365,12 +422,13 @@ function handleStartGame(ws: WebSocket, client: ConnectedClient): void {
 
   // Start the game - client will create the actual game state
   room.status = 'playing';
+  touchRoom(room);
 
   // Send start message with player info for game initialization
   const playerInfo = room.players.map((p, idx) => ({
     id: idx,
     name: p.name,
-    captainId: p.captainId,
+    captainId: p.captainId!,
     networkId: p.id, // Map network ID to game player ID
   }));
 
@@ -380,26 +438,128 @@ function handleStartGame(ws: WebSocket, client: ConnectedClient): void {
   });
 
   console.log(`Game started in room ${room.code} with ${room.players.length} players`);
+
+  logAnalytics({
+    event: 'game_start',
+    roomCode: room.code,
+    players: room.players.map(p => ({
+      name: p.name,
+      captainId: p.captainId,
+      isHost: p.isHost,
+    })),
+    playerCount: room.players.length,
+  });
 }
 
-function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknown): void {
+function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknown, stateHash?: string): void {
   if (!client.roomId) return;
 
   const room = rooms.get(client.roomId);
   if (!room || room.status !== 'playing') return;
 
+  touchRoom(room);
+
   // Find player index for this client
   const playerIndex = room.players.findIndex(p => p.id === client.playerId);
   if (playerIndex === -1) return;
 
-  // Broadcast the action to all players (they'll validate on their end)
+  // Broadcast the action to all other players (they'll validate on their end)
   broadcast(room, {
     type: 'GAME_STATE_UPDATE',
     gameState: {
       action,
       fromPlayerIndex: playerIndex,
-      fromPlayerId: client.playerId
+      fromPlayerId: client.playerId,
+      stateHash,
     }
+  }, client.playerId);
+}
+
+function handleStateSnapshot(ws: WebSocket, client: ConnectedClient, snapshot: unknown, stateHash: string): void {
+  if (!client.roomId) return;
+
+  const room = rooms.get(client.roomId);
+  if (!room || room.status !== 'playing') return;
+
+  touchRoom(room);
+
+  // Only the host stores snapshots on the server (single source of truth)
+  if (client.playerId === room.hostId) {
+    room.gameState = snapshot;
+    room.stateHash = stateHash;
+  }
+
+  // Broadcast snapshot to all other players for resync
+  broadcast(room, {
+    type: 'STATE_SNAPSHOT',
+    snapshot,
+    stateHash,
+  }, client.playerId);
+}
+
+function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
+  if (!client.roomId) return;
+
+  const room = rooms.get(client.roomId);
+  if (!room || room.status !== 'playing') return;
+
+  touchRoom(room);
+
+  // If we have a stored snapshot, send it directly
+  if (room.gameState) {
+    send(ws, {
+      type: 'STATE_SNAPSHOT',
+      snapshot: room.gameState,
+      stateHash: room.stateHash || '',
+    });
+    console.log(`Sent stored snapshot to ${client.playerId} for resync`);
+    return;
+  }
+
+  // Otherwise, ask the host to send a fresh snapshot
+  const hostClient = getClientByPlayerId(room.hostId);
+  if (hostClient) {
+    send(hostClient.ws, {
+      type: 'RESYNC_REQUESTED',
+      playerId: client.playerId,
+    });
+    console.log(`Resync requested by ${client.playerId}, asking host ${room.hostId}`);
+  }
+}
+
+function handleGameOver(ws: WebSocket, client: ConnectedClient, winnerId: number, winnerName: string, stats: unknown): void {
+  if (!client.roomId) return;
+
+  const room = rooms.get(client.roomId);
+  if (!room || room.status !== 'playing') return;
+
+  // Only process game over from host to avoid duplicates
+  if (client.playerId !== room.hostId) return;
+
+  room.status = 'finished';
+  touchRoom(room);
+
+  // Broadcast game over to all players
+  broadcast(room, {
+    type: 'GAME_OVER',
+    winnerId,
+    winnerName,
+  });
+
+  console.log(`Game over in room ${room.code}. Winner: ${winnerName}`);
+
+  logAnalytics({
+    event: 'game_end',
+    roomCode: room.code,
+    winnerId,
+    winnerName,
+    stats,
+    players: room.players.map(p => ({
+      name: p.name,
+      captainId: p.captainId,
+      isHost: p.isHost,
+    })),
+    duration: Date.now() - room.createdAt,
   });
 }
 
@@ -408,6 +568,8 @@ function handleChat(ws: WebSocket, client: ConnectedClient, message: string): vo
 
   const room = rooms.get(client.roomId);
   if (!room) return;
+
+  touchRoom(room);
 
   const player = room.players.find(p => p.id === client.playerId);
   if (!player) return;
@@ -444,7 +606,16 @@ function handleMessage(ws: WebSocket, client: ConnectedClient, data: string): vo
         handleStartGame(ws, client);
         break;
       case 'GAME_ACTION':
-        handleGameAction(ws, client, message.action);
+        handleGameAction(ws, client, message.action, message.stateHash);
+        break;
+      case 'STATE_SNAPSHOT':
+        handleStateSnapshot(ws, client, message.snapshot, message.stateHash);
+        break;
+      case 'REQUEST_RESYNC':
+        handleRequestResync(ws, client);
+        break;
+      case 'GAME_OVER':
+        handleGameOver(ws, client, message.winnerId, message.winnerName, message.stats);
         break;
       case 'CHAT':
         handleChat(ws, client, message.message);
@@ -472,12 +643,41 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
-      version: 2,
-      captainSelection: true,
+      version: 3,
+      features: ['captainSelection', 'stateSync', 'rejoin', 'analytics'],
       rooms: rooms.size,
       clients: clients.size,
       uptime: process.uptime(),
     }));
+    return;
+  }
+
+  if (req.url === '/stats') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    try {
+      if (existsSync(GAMES_LOG)) {
+        const lines = readFileSync(GAMES_LOG, 'utf-8').trim().split('\n').filter(Boolean);
+        const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        const starts = events.filter((e: any) => e.event === 'game_start');
+        const ends = events.filter((e: any) => e.event === 'game_end');
+        const rejoins = events.filter((e: any) => e.event === 'player_rejoin');
+        res.end(JSON.stringify({
+          totalGamesStarted: starts.length,
+          totalGamesFinished: ends.length,
+          totalRejoins: rejoins.length,
+          recentGames: ends.slice(-10).map((e: any) => ({
+            winnerName: e.winnerName,
+            players: e.players,
+            duration: e.duration,
+            timestamp: e.timestamp,
+          })),
+        }));
+      } else {
+        res.end(JSON.stringify({ totalGamesStarted: 0, totalGamesFinished: 0, totalRejoins: 0, recentGames: [] }));
+      }
+    } catch (e) {
+      res.end(JSON.stringify({ error: 'Failed to read stats' }));
+    }
     return;
   }
 
@@ -510,6 +710,7 @@ wss.on('connection', (ws) => {
     if (client.roomId) {
       const room = rooms.get(client.roomId);
       if (room) {
+        touchRoom(room);
         if (room.status === 'lobby') {
           // In lobby, fully remove player
           leaveRoom(room, client.playerId);
@@ -540,15 +741,15 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Cleanup old rooms periodically
+// Cleanup old rooms periodically (use lastActivity instead of createdAt)
 setInterval(() => {
   const now = Date.now();
   for (const [id, room] of rooms) {
-    if (now - room.createdAt > ROOM_TIMEOUT) {
+    if (now - room.lastActivity > ROOM_TIMEOUT) {
       // Notify players
       broadcast(room, { type: 'ERROR', message: 'Room closed due to inactivity.' });
       rooms.delete(id);
-      console.log(`Room ${room.code} cleaned up due to inactivity`);
+      console.log(`Room ${room.code} cleaned up due to inactivity (${Math.round((now - room.lastActivity) / 60000)}min idle)`);
     }
   }
 }, ROOM_CLEANUP_INTERVAL);
@@ -557,10 +758,12 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
 ║                    RUST BUCKET RISING                         ║
-║                   Multiplayer Server                          ║
+║                   Multiplayer Server v3                       ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  WebSocket server running on port ${PORT}                       ║
 ║  Health check: http://0.0.0.0:${PORT}/health                    ║
+║  Stats: http://0.0.0.0:${PORT}/stats                            ║
+║  Features: state sync, rejoin, analytics                     ║
 ║  Waiting for connections...                                   ║
 ╚═══════════════════════════════════════════════════════════════╝
 `);

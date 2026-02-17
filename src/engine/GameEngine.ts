@@ -387,6 +387,34 @@ export class GameEngine {
     return this.state.players.find(p => p.id === playerId);
   }
 
+  // Load a full state snapshot (for rejoin / resync)
+  loadState(snapshot: GameState): void {
+    this.state = snapshot;
+  }
+
+  // Compute a deterministic hash of the critical game state for desync detection
+  computeStateHash(): string {
+    const s = this.state;
+    const parts: string[] = [
+      `t${s.turn}p${s.currentPlayerIndex}ph${s.phase}go${s.gameOver ? 1 : 0}`,
+    ];
+    for (const p of s.players) {
+      parts.push(
+        `${p.id}:f${p.fame}c${p.credits}l${p.location}` +
+        `h${p.hand.length}d${p.deck.length}dc${p.discard.length}pl${p.played.length}` +
+        `w${p.currentPower.weapons}co${p.currentPower.computers}e${p.currentPower.engines}lo${p.currentPower.logistics}`
+      );
+    }
+    // Simple djb2 string hash
+    let hash = 5381;
+    const str = parts.join('|');
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return (hash >>> 0).toString(36);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Logging
   // ─────────────────────────────────────────────────────────────────────────

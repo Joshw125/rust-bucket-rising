@@ -17,6 +17,7 @@ export interface OpponentBarProps {
   opponents: Player[];
   allPlayers?: Player[];  // Full player list for color index lookup
   layout?: 'horizontal' | 'vertical';
+  onViewPlayer?: (player: Player) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +138,7 @@ function OpponentMini({ player, playerIndex, expanded, onToggle }: OpponentMiniP
 // Main Opponent Bar Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function OpponentBar({ opponents, allPlayers, layout = 'horizontal' }: OpponentBarProps) {
+export function OpponentBar({ opponents, allPlayers, layout = 'horizontal', onViewPlayer }: OpponentBarProps) {
   // Helper to get player index for color lookup
   const getPlayerIndex = (opponent: Player): number => {
     if (allPlayers) return allPlayers.findIndex(p => p.id === opponent.id);
@@ -206,6 +207,17 @@ export function OpponentBar({ opponents, allPlayers, layout = 'horizontal' }: Op
                       );
                     })}
                   </div>
+                  {onViewPlayer && (
+                    <button
+                      className="mt-2 w-full text-[10px] font-semibold text-slate-400 hover:text-amber-400 hover:bg-slate-800 py-1 rounded transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewPlayer(opponent);
+                      }}
+                    >
+                      View Full Tableau
+                    </button>
+                  )}
                 </div>
               )}
             </div>

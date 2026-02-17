@@ -26,6 +26,8 @@ export interface Room {
   maxPlayers: number;
   status: 'lobby' | 'playing' | 'finished';
   gameState: unknown | null; // GameState when playing
+  stateHash: string | null; // Latest state hash for desync detection
+  lastActivity: number; // Timestamp of last message (for cleanup)
   createdAt: number;
 }
 
@@ -40,7 +42,10 @@ export type ClientMessage =
   | { type: 'SELECT_CAPTAIN'; captainId: string }
   | { type: 'TOGGLE_READY' }
   | { type: 'START_GAME' }
-  | { type: 'GAME_ACTION'; action: unknown } // GameAction
+  | { type: 'GAME_ACTION'; action: unknown; stateHash?: string }
+  | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
+  | { type: 'REQUEST_RESYNC' }
+  | { type: 'GAME_OVER'; winnerId: number; winnerName: string; stats: unknown }
   | { type: 'CHAT'; message: string }
   | { type: 'PING' };
 
@@ -56,8 +61,10 @@ export type ServerMessage =
   | { type: 'ROOM_UPDATE'; room: Room }
   | { type: 'PLAYER_JOINED'; player: RoomPlayer }
   | { type: 'PLAYER_LEFT'; playerId: string; newHostId?: string }
-  | { type: 'GAME_STARTED'; gameState: unknown }
-  | { type: 'GAME_STATE_UPDATE'; gameState: unknown }
+  | { type: 'GAME_STARTED'; gameState: { players: Array<{ id: number; name: string; captainId: string; networkId: string }> } }
+  | { type: 'GAME_STATE_UPDATE'; gameState: { action: unknown; fromPlayerIndex: number; fromPlayerId: string; stateHash?: string } }
+  | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
+  | { type: 'RESYNC_REQUESTED'; playerId: string }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string }
   | { type: 'CHAT_MESSAGE'; playerId: string; playerName: string; message: string }
   | { type: 'PONG' };

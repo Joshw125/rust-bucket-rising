@@ -1,11 +1,11 @@
-// ═══════════════════════════════════════════════════════════════════════════════
+// =============================================================================
 // RUST BUCKET RISING - Multiplayer Types
 // Shared types for WebSocket communication
-// ═══════════════════════════════════════════════════════════════════════════════
+// =============================================================================
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Room & Player Types
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export interface RoomPlayer {
   id: string;
@@ -29,9 +29,9 @@ export interface Room {
   createdAt: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Client -> Server Messages
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export type ClientMessage =
   | { type: 'CREATE_ROOM'; playerName: string }
@@ -40,13 +40,16 @@ export type ClientMessage =
   | { type: 'SELECT_CAPTAIN'; captainId: string }
   | { type: 'TOGGLE_READY' }
   | { type: 'START_GAME' }
-  | { type: 'GAME_ACTION'; action: unknown }
+  | { type: 'GAME_ACTION'; action: unknown; stateHash?: string }
+  | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
+  | { type: 'REQUEST_RESYNC' }
+  | { type: 'GAME_OVER'; winnerId: number; winnerName: string; stats: unknown }
   | { type: 'CHAT'; message: string }
   | { type: 'PING' };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Server -> Client Messages
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export type ServerMessage =
   | { type: 'CONNECTED'; playerId: string }
@@ -57,14 +60,16 @@ export type ServerMessage =
   | { type: 'PLAYER_JOINED'; player: RoomPlayer }
   | { type: 'PLAYER_LEFT'; playerId: string; newHostId?: string }
   | { type: 'GAME_STARTED'; gameState: { players: Array<{ id: number; name: string; captainId: string; networkId: string }> } }
-  | { type: 'GAME_STATE_UPDATE'; gameState: { action: unknown; fromPlayerIndex: number; fromPlayerId: string } }
+  | { type: 'GAME_STATE_UPDATE'; gameState: { action: unknown; fromPlayerIndex: number; fromPlayerId: string; stateHash?: string } }
+  | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
+  | { type: 'RESYNC_REQUESTED'; playerId: string }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string }
   | { type: 'CHAT_MESSAGE'; playerId: string; playerName: string; message: string }
   | { type: 'PONG' };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // Connection State
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 

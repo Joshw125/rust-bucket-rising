@@ -2,14 +2,14 @@
 // RUST BUCKET RISING - Main Application
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameSetup } from './components/GameSetup';
 import { GameBoard } from './components/GameBoard';
 import { SimulationMode } from './components/SimulationMode';
 import { OnlineLobby } from './components/OnlineLobby';
 import { useGameStore, useMultiplayer } from './hooks';
 import { CAPTAINS } from './data';
-import type { Captain, AIStrategy, GameAction } from './types';
+import type { Captain, AIStrategy, GameAction, GameState } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Menu Screen
@@ -127,8 +127,23 @@ function App() {
   const [localPlayerIndex, setLocalPlayerIndex] = useState<number | null>(null);
   const initGame = useGameStore((s) => s.initGame);
   const applyRemoteAction = useGameStore((s) => s.applyRemoteAction);
+  const loadSnapshot = useGameStore((s) => s.loadSnapshot);
+  const computeStateHash = useGameStore((s) => s.computeStateHash);
   const gameState = useGameStore((s) => s.gameState);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
+  const sendStateSnapshot = useMultiplayer((s) => s.sendStateSnapshot);
+  const requestResync = useMultiplayer((s) => s.requestResync);
+  const playerId = useMultiplayer((s) => s.playerId);
+  const room = useMultiplayer((s) => s.room);
+
+  // Track whether we're the host for snapshot duties
+  const isHost = room?.hostId === playerId;
+  const isHostRef = useRef(isHost);
+  isHostRef.current = isHost;
+
+  // Track desync count to avoid spamming resync requests
+  const desyncCountRef = useRef(0);
+  const lastResyncRef = useRef(0);
 
   const handleStartGame = (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => {
     setIsOnlineGame(false);
@@ -154,22 +169,131 @@ function App() {
   };
 
   // Handle game actions received from other players
-  const handleRemoteGameAction = useCallback((action: GameAction, fromPlayerIndex: number) => {
+  const handleRemoteGameAction = useCallback((action: GameAction, fromPlayerIndex: number, remoteStateHash?: string) => {
     // Only apply actions from other players (we already applied our own locally)
     if (fromPlayerIndex !== localPlayerIndex) {
       applyRemoteAction(action);
-    }
-  }, [localPlayerIndex, applyRemoteAction]);
 
-  // Set up the game action callback for multiplayer
+      // After applying, check state hash if provided
+      if (remoteStateHash) {
+        const localHash = computeStateHash();
+        if (localHash && localHash !== remoteStateHash) {
+          desyncCountRef.current++;
+          console.warn(`State desync detected! Local: ${localHash}, Remote: ${remoteStateHash} (count: ${desyncCountRef.current})`);
+
+          // Request resync after 2 consecutive desyncs, but not more than once per 10s
+          if (desyncCountRef.current >= 2 && Date.now() - lastResyncRef.current > 10000) {
+            console.log('Requesting resync from host...');
+            requestResync();
+            lastResyncRef.current = Date.now();
+            desyncCountRef.current = 0;
+          }
+        } else {
+          // Hashes match, reset counter
+          desyncCountRef.current = 0;
+        }
+      }
+    }
+  }, [localPlayerIndex, applyRemoteAction, computeStateHash, requestResync]);
+
+  // Handle receiving a state snapshot (for resync or rejoin)
+  const handleStateSnapshot = useCallback((snapshot: unknown, _stateHash: string) => {
+    console.log('Received state snapshot, loading...');
+    loadSnapshot(snapshot as GameState);
+    desyncCountRef.current = 0;
+  }, [loadSnapshot]);
+
+  // Handle resync request (host sends their current state)
+  const handleResyncRequested = useCallback(() => {
+    if (!isHostRef.current) return;
+    const currentState = useGameStore.getState().gameState;
+    const hash = useGameStore.getState().computeStateHash();
+    if (currentState) {
+      console.log('Resync requested, sending snapshot...');
+      sendStateSnapshot(currentState, hash);
+    }
+  }, [sendStateSnapshot]);
+
+  // Set up the game callbacks for multiplayer
   useEffect(() => {
     if (isOnlineGame) {
       setGameCallbacks(
         () => {}, // onGameStart already handled by OnlineLobby
-        handleRemoteGameAction
+        handleRemoteGameAction,
+        handleStateSnapshot,
+        handleResyncRequested,
       );
     }
-  }, [isOnlineGame, handleRemoteGameAction, setGameCallbacks]);
+  }, [isOnlineGame, handleRemoteGameAction, handleStateSnapshot, handleResyncRequested, setGameCallbacks]);
+
+  // Host: send state snapshot + hash with every action (for sync verification)
+  // Also send full snapshot after END_TURN for resync ability
+  useEffect(() => {
+    if (!isOnlineGame || !isHost) return;
+
+    const gameStore = useGameStore.getState();
+    // Set callback to include state hash with each action
+    gameStore.setOnActionDispatched((action: GameAction) => {
+      const hash = useGameStore.getState().computeStateHash();
+      useMultiplayer.getState().sendGameAction(action, hash);
+
+      // After END_TURN, send full snapshot so server stores it
+      if (action.type === 'END_TURN') {
+        const state = useGameStore.getState().gameState;
+        if (state) {
+          // Small delay to ensure state is fully settled
+          setTimeout(() => {
+            const finalState = useGameStore.getState().gameState;
+            const finalHash = useGameStore.getState().computeStateHash();
+            if (finalState) {
+              useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
+            }
+          }, 100);
+        }
+      }
+
+      // Check for game over
+      const currentGameState = useGameStore.getState().gameState;
+      if (currentGameState?.gameOver && currentGameState.winner) {
+        const winner = currentGameState.winner;
+        useMultiplayer.getState().sendGameOver(
+          winner.id,
+          winner.name,
+          {
+            players: currentGameState.players.map(p => ({
+              id: p.id,
+              name: p.name,
+              captainId: p.captain.id,
+              fame: p.fame,
+              credits: p.credits,
+              completedMissions: p.completedMissions.length,
+              hazardsInDeck: p.hazardsInDeck,
+              totalCardsPlayed: p.played.length,
+            })),
+            turn: currentGameState.turn,
+          }
+        );
+      }
+    });
+
+    return () => {
+      gameStore.setOnActionDispatched(null);
+    };
+  }, [isOnlineGame, isHost]);
+
+  // Non-host: set callback to send actions without hash (hash comes from host)
+  useEffect(() => {
+    if (!isOnlineGame || isHost) return;
+
+    const gameStore = useGameStore.getState();
+    gameStore.setOnActionDispatched((action: GameAction) => {
+      useMultiplayer.getState().sendGameAction(action);
+    });
+
+    return () => {
+      gameStore.setOnActionDispatched(null);
+    };
+  }, [isOnlineGame, isHost]);
 
   // If we're on game screen but no game state, go back to menu
   if (screen === 'game' && !gameState) {

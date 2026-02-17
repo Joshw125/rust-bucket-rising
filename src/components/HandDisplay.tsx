@@ -169,6 +169,7 @@ interface HandCardProps {
   onInstallCard: (card: CardInstance, system: SystemType) => void;
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
+  readOnly?: boolean;
 }
 
 function HandCard({
@@ -181,6 +182,7 @@ function HandCard({
   onInstallCard,
   onClearHazard,
   onViewCard,
+  readOnly = false,
 }: HandCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
@@ -199,8 +201,12 @@ function HandCard({
   // Capture bounding rect for ghost card animation
   const getRect = () => cardRef.current?.getBoundingClientRect();
 
-  // Click on card plays it (for non-hazards)
+  // Click on card plays it (for non-hazards), or views it in read-only mode
   const handleCardClick = () => {
+    if (readOnly) {
+      onViewCard?.(card);
+      return;
+    }
     if (!isHazard) {
       onPlayCard(card, getRect());
     } else if (canClear) {
@@ -241,15 +247,17 @@ function HandCard({
         {/* Overlay hint on hover */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-lg flex items-end justify-center pb-4 pointer-events-none">
           <span className="text-white font-bold text-lg drop-shadow-lg">
-            {isHazard ? (canClear ? '🧹 Click to Clear' : '⚠️ Hazard') : '▶ Click to Play'}
+            {readOnly
+              ? '🔍 View Card'
+              : isHazard ? (canClear ? '🧹 Click to Clear' : '⚠️ Hazard') : '▶ Click to Play'}
           </span>
         </div>
       </div>
 
       {/* Action buttons - appear on hover */}
       <div className="hand-card-actions">
-        {/* Play button (not for hazards) - also clickable for extra clarity */}
-        {!isHazard && (
+        {/* Play button (not for hazards) - hidden in read-only mode */}
+        {!readOnly && !isHazard && (
           <button
             className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-sm px-4 py-2 rounded font-bold shadow-lg"
             onClick={(e) => {
@@ -261,8 +269,8 @@ function HandCard({
           </button>
         )}
 
-        {/* Clear hazard button */}
-        {isHazard && hazardCard && (
+        {/* Clear hazard button - hidden in read-only mode */}
+        {!readOnly && isHazard && hazardCard && (
           <button
             className={clsx(
               'text-sm px-4 py-2 rounded font-bold shadow-lg',
@@ -281,8 +289,8 @@ function HandCard({
           </button>
         )}
 
-        {/* Install button with dropdown */}
-        {isInstallable && (
+        {/* Install button with dropdown - hidden in read-only mode */}
+        {!readOnly && isInstallable && (
           <div className="relative">
             <button
               className={clsx(
@@ -327,7 +335,7 @@ function HandCard({
           </div>
         )}
 
-        {/* View details button */}
+        {/* View details button - always available */}
         <button
           className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 py-2 rounded font-semibold shadow-lg"
           onClick={(e) => {
@@ -355,6 +363,7 @@ interface VerticalHandCardProps {
   onInstallCard: (card: CardInstance, system: SystemType) => void;
   onClearHazard: (card: CardInstance) => void;
   onViewCard?: (card: CardInstance) => void;
+  readOnly?: boolean;
 }
 
 function VerticalHandCard({
@@ -365,6 +374,7 @@ function VerticalHandCard({
   onInstallCard,
   onClearHazard,
   onViewCard,
+  readOnly = false,
 }: VerticalHandCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [showInstallMenu, setShowInstallMenu] = useState(false);
@@ -419,8 +429,8 @@ function VerticalHandCard({
       {/* Action buttons - appear on hover */}
       {isHovered && (
         <div className="absolute top-2 right-2 flex flex-col gap-1 z-10">
-          {/* Play button */}
-          {!isHazard && (
+          {/* Play button - hidden in read-only mode */}
+          {!readOnly && !isHazard && (
             <button
               className="bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs px-2 py-1 rounded font-bold shadow-lg"
               onClick={(e) => {
@@ -432,8 +442,8 @@ function VerticalHandCard({
             </button>
           )}
 
-          {/* Clear hazard */}
-          {isHazard && (
+          {/* Clear hazard - hidden in read-only mode */}
+          {!readOnly && isHazard && (
             <button
               className={clsx(
                 'text-xs px-2 py-1 rounded font-bold shadow-lg',
@@ -451,8 +461,8 @@ function VerticalHandCard({
             </button>
           )}
 
-          {/* Install */}
-          {isInstallable && (
+          {/* Install - hidden in read-only mode */}
+          {!readOnly && isInstallable && (
             <div className="relative">
               <button
                 className={clsx(
@@ -496,7 +506,7 @@ function VerticalHandCard({
             </div>
           )}
 
-          {/* View */}
+          {/* View - always available */}
           <button
             className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-2 py-1 rounded font-semibold shadow-lg"
             onClick={(e) => {
@@ -539,12 +549,17 @@ export function HandDisplay({
     );
   }
 
+  // No-op handlers for read-only mode (not your turn)
+  const noopPlay = () => {};
+  const noopInstall = () => {};
+  const noopClear = () => {};
+
   // Vertical layout - stacked cards for sidebar
   if (layout === 'vertical') {
     return (
-      <div className={`flex flex-col gap-3 transition-opacity ${!isMyTurn ? 'opacity-60 pointer-events-none' : ''}`}>
+      <div className={`flex flex-col gap-3 transition-opacity ${!isMyTurn ? 'opacity-75' : ''}`}>
         {!isMyTurn && (
-          <div className="text-center text-slate-500 text-xs font-semibold py-1">Waiting for your turn...</div>
+          <div className="text-center text-cyan-500/80 text-xs font-semibold py-1">Not your turn - plan your moves!</div>
         )}
         {sortedCards.map((card, index) => (
           <VerticalHandCard
@@ -552,10 +567,11 @@ export function HandDisplay({
             card={card}
             player={player}
             index={index}
-            onPlayCard={onPlayCard}
-            onInstallCard={onInstallCard}
-            onClearHazard={onClearHazard}
+            onPlayCard={isMyTurn ? onPlayCard : noopPlay}
+            onInstallCard={isMyTurn ? onInstallCard : noopInstall}
+            onClearHazard={isMyTurn ? onClearHazard : noopClear}
             onViewCard={onViewCard}
+            readOnly={!isMyTurn}
           />
         ))}
       </div>
@@ -564,7 +580,12 @@ export function HandDisplay({
 
   // Horizontal fanned layout (default)
   return (
-    <div className={`hand-container transition-opacity ${!isMyTurn ? 'opacity-60 pointer-events-none' : ''}`}>
+    <div className={`hand-container transition-opacity ${!isMyTurn ? 'opacity-75' : ''}`}>
+      {!isMyTurn && (
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-cyan-500/80 text-xs font-semibold bg-slate-900/80 px-3 py-1 rounded-b">
+          Not your turn - plan your moves!
+        </div>
+      )}
       {sortedCards.map((card, index) => (
         <HandCard
           key={card.instanceId}
@@ -573,10 +594,11 @@ export function HandDisplay({
           position={positions[index]}
           zIndex={index}
           index={index}
-          onPlayCard={onPlayCard}
-          onInstallCard={onInstallCard}
-          onClearHazard={onClearHazard}
+          onPlayCard={isMyTurn ? onPlayCard : noopPlay}
+          onInstallCard={isMyTurn ? onInstallCard : noopInstall}
+          onClearHazard={isMyTurn ? onClearHazard : noopClear}
           onViewCard={onViewCard}
+          readOnly={!isMyTurn}
         />
       ))}
     </div>

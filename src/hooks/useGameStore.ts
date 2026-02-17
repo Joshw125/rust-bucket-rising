@@ -76,6 +76,8 @@ export interface GameStore {
 
   // Multiplayer support
   applyRemoteAction: (action: GameAction) => boolean;
+  loadSnapshot: (snapshot: GameState) => void;
+  computeStateHash: () => string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,6 +416,23 @@ export const useGameStore = create<GameStore>()(
       });
 
       return result;
+    },
+
+    // Load a full game state snapshot (for rejoin / resync)
+    loadSnapshot: (snapshot) => {
+      const { engine } = get();
+      if (!engine) return;
+      engine.loadState(snapshot);
+      set((state) => {
+        state.gameState = cloneGameState(engine.getState());
+      });
+    },
+
+    // Compute state hash for desync detection
+    computeStateHash: () => {
+      const { engine } = get();
+      if (!engine) return '';
+      return engine.computeStateHash();
     },
   }))
 );

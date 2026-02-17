@@ -23,10 +23,11 @@ import { ScaleSettingsPanel } from './ScaleSettingsPanel';
 import { MobileTabBar } from './MobileTabBar';
 import { MobileActionBar } from './MobileActionBar';
 import { AnimationOverlay } from './AnimationOverlay';
+import { GameLogPanel } from './GameLogPanel';
 import { FameTrack } from './FameTrack';
 import { ActionButtonWithTooltip } from './ActionTooltip';
 import { PLAYER_COLORS } from './SpaceTrack';
-import type { SystemType, MissionInstance, GameAction, CardInstance } from '@/types';
+import type { SystemType, MissionInstance, GameAction, CardInstance, Player } from '@/types';
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,6 +39,8 @@ function GameHeader() {
   const currentPlayer = useCurrentPlayer();
   const toggleScalePanel = useUIScaleStore((s) => s.toggleScalePanel);
   const showScalePanel = useUIScaleStore((s) => s.showScalePanel);
+  const toggleLog = useGameStore((s) => s.toggleLog);
+  const showLog = useGameStore((s) => s.showLog);
 
   if (!gameState || !currentPlayer) return null;
 
@@ -61,6 +64,18 @@ function GameHeader() {
           title="UI Scale Settings"
         >
           ⚙️
+        </button>
+        <button
+          onClick={toggleLog}
+          className={clsx(
+            'text-sm px-2 py-1 rounded transition-all',
+            showLog
+              ? 'bg-amber-500/20 text-amber-400'
+              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+          )}
+          title="Game Log"
+        >
+          Log
         </button>
       </div>
 
@@ -1144,6 +1159,122 @@ function PowerChoiceModal() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Opponent Tableau Viewer Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function OpponentTableauModal({
+  player,
+  allPlayers,
+  onClose,
+  onViewMission,
+}: {
+  player: Player;
+  allPlayers: Player[];
+  onClose: () => void;
+  onViewMission: (mission: MissionInstance) => void;
+}) {
+  const playerIndex = allPlayers.findIndex(p => p.id === player.id);
+  const pColor = PLAYER_COLORS[playerIndex % PLAYER_COLORS.length];
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="game-panel p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <img
+              src={`/cards/captain/${player.captain.id.charAt(0).toUpperCase() + player.captain.id.slice(1)}.png`}
+              alt={player.captain.name}
+              className="w-12 h-12 rounded object-cover border-2"
+              style={{ borderColor: pColor.hex + '80' }}
+            />
+            <div>
+              <div className={clsx('font-bold text-lg', pColor.text)}>{player.name}</div>
+              <div className="text-slate-500 text-xs">{player.captain.name}</div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-white text-lg px-2 py-1 rounded hover:bg-slate-800"
+          >
+            X
+          </button>
+        </div>
+
+        {/* Quick Stats */}
+        <div className="flex gap-4 mb-4 text-sm">
+          <div className="flex items-center gap-1">
+            <span className="text-amber-400">★</span>
+            <span className="text-amber-400 font-bold">{player.fame}</span>
+            <span className="text-slate-500">Fame</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-amber-300">💰</span>
+            <span className="text-amber-300 font-semibold">{player.credits}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400">📍</span>
+            <span className="text-slate-300">{player.location}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400">🃏</span>
+            <span className="text-slate-300">{player.hand.length} in hand</span>
+          </div>
+        </div>
+
+        {/* Systems */}
+        <div className="space-y-2 mb-4">
+          <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Ship Systems</h3>
+          <ExpandedSystemPanel system="weapons" player={player} isCurrentPlayer={false} onActivate={() => {}} />
+          <ExpandedSystemPanel system="computers" player={player} isCurrentPlayer={false} onActivate={() => {}} />
+          <ExpandedSystemPanel system="engines" player={player} isCurrentPlayer={false} onActivate={() => {}} />
+          <ExpandedSystemPanel system="logistics" player={player} isCurrentPlayer={false} onActivate={() => {}} />
+        </div>
+
+        {/* Trophies */}
+        {player.trophies.length > 0 && (
+          <div className="mb-3">
+            <h3 className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">
+              Trophies ({player.trophies.length})
+            </h3>
+            <div className="space-y-1">
+              {player.trophies.map((trophy) => (
+                <TrophyItem key={trophy.instanceId} trophy={trophy} onView={() => onViewMission(trophy)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Completed Missions */}
+        {player.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
+          <div className="mb-3">
+            <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Completed Missions ({player.completedMissions.filter(m => m.rewardType !== 'trophy').length})
+            </h3>
+            <div className="space-y-1">
+              {player.completedMissions.filter(m => m.rewardType !== 'trophy').map((mission) => (
+                <MissionItem key={mission.instanceId} mission={mission} onView={() => onViewMission(mission)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Deck stats */}
+        <div className="flex gap-4 text-[10px] text-slate-500 border-t border-slate-800 pt-3">
+          <span>Deck: {player.deck.length}</span>
+          <span>Discard: {player.discard.length}</span>
+          <span>Played: {player.played.length}</span>
+          <span>Hazards: {player.hazardsInDeck}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Game Board Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1178,11 +1309,24 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   const storeClearHazard = useGameStore((s) => s.clearHazard);
   const setOnActionDispatched = useGameStore((s) => s.setOnActionDispatched);
 
+  // Log panel
+  const showLog = useGameStore((s) => s.showLog);
+  const toggleLog = useGameStore((s) => s.toggleLog);
+
+  // Opponent viewer state
+  const [viewingOpponent, setViewingOpponent] = useState<Player | null>(null);
+
   // Multiplayer hooks
   const sendGameAction = useMultiplayer((s) => s.sendGameAction);
+  const multiplayerStatus = useMultiplayer((s) => s.status);
 
   // Determine if it's the local player's turn
   const isMyTurn = !isOnlineGame || (localPlayerIndex !== null && gameState?.currentPlayerIndex === localPlayerIndex);
+
+  // The player whose perspective we display (always local player in online, else current turn player)
+  const localPlayer = isOnlineGame && localPlayerIndex !== null && players[localPlayerIndex]
+    ? players[localPlayerIndex]
+    : currentPlayer;
 
   // Set up multiplayer sync callback when online game starts
   useEffect(() => {
@@ -1219,16 +1363,16 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     animSetRef('creditCounter', el);
   }, [animSetRef]);
 
-  // Emit credit fly animation when credits change
+  // Emit credit fly animation when local player's credits change
   useEffect(() => {
-    if (!currentPlayer) return;
-    const credits = currentPlayer.credits;
+    if (!localPlayer) return;
+    const credits = localPlayer.credits;
     if (prevCreditsRef.current !== null && prevCreditsRef.current !== credits) {
       const delta = credits - prevCreditsRef.current;
       animEmit({ type: 'credits-change', delta });
     }
     prevCreditsRef.current = credits;
-  }, [currentPlayer?.credits, animEmit]);
+  }, [localPlayer?.credits, animEmit]);
 
   // "Your Turn!" popup on turn start
   const prevTurnRef = useRef<string | null>(null);
@@ -1295,7 +1439,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     return storeClearHazard(hazardInstanceId);
   }, [isMyTurn, storeClearHazard]);
 
-  if (!gameState || !currentPlayer) {
+  if (!gameState || !currentPlayer || !localPlayer) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-white">Loading game...</div>
@@ -1303,8 +1447,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     );
   }
 
-  // Other players (not current)
-  const otherPlayers = players.filter(p => p.id !== currentPlayer.id);
+  // Other players (from local player's perspective)
+  const otherPlayers = players.filter(p => p.id !== localPlayer.id);
 
   // ─────────────────────────────────────────────────────────────────────────
   // MOBILE LAYOUT
@@ -1343,13 +1487,13 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <img
-                src={`/cards/captain/${currentPlayer.captain.id.charAt(0).toUpperCase() + currentPlayer.captain.id.slice(1)}.png`}
-                alt={currentPlayer.captain.name}
+                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                alt={localPlayer.captain.name}
                 className="w-8 h-8 rounded object-cover border border-amber-600/50"
               />
               <div>
-                <div className="text-amber-400 font-bold text-sm leading-none">{currentPlayer.name}</div>
-                <div className="text-slate-500 text-[10px] leading-none mt-0.5">{currentPlayer.captain.name}</div>
+                <div className="text-amber-400 font-bold text-sm leading-none">{localPlayer.name}</div>
+                <div className="text-slate-500 text-[10px] leading-none mt-0.5">{localPlayer.captain.name}</div>
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
@@ -1374,8 +1518,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {activeView === 'hand' && (
             <div className="p-3">
               <HandDisplay
-                cards={currentPlayer.hand}
-                player={currentPlayer}
+                cards={localPlayer.hand}
+                player={localPlayer}
                 onPlayCard={playCardWithChoice}
                 onInstallCard={(card, system) => installCard(card.instanceId, system)}
                 onClearHazard={(card) => clearHazard(card.instanceId)}
@@ -1388,29 +1532,29 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               <div className="flex items-end justify-center gap-4 mt-4 pt-3 border-t border-slate-800">
                 <div className="flex flex-col items-center">
                   <CardBack size="tiny" />
-                  <div className="text-amber-500 text-[10px] font-bold mt-0.5">{currentPlayer.deck.length}</div>
+                  <div className="text-amber-500 text-[10px] font-bold mt-0.5">{localPlayer.deck.length}</div>
                   <span className="text-slate-500 text-[8px] font-semibold">DECK</span>
                 </div>
                 <div className="flex flex-col items-center">
-                  {currentPlayer.played.length > 0 ? (
-                    <Card card={currentPlayer.played[currentPlayer.played.length - 1]} size="tiny" />
+                  {localPlayer.played.length > 0 ? (
+                    <Card card={localPlayer.played[localPlayer.played.length - 1]} size="tiny" />
                   ) : (
                     <div className="w-16 h-22 rounded border-2 border-dashed border-green-700/50 bg-green-900/20 flex items-center justify-center">
                       <span className="text-green-600 text-[10px]">-</span>
                     </div>
                   )}
-                  <div className="text-green-500 text-[10px] font-bold mt-0.5">{currentPlayer.played.length}</div>
+                  <div className="text-green-500 text-[10px] font-bold mt-0.5">{localPlayer.played.length}</div>
                   <span className="text-slate-500 text-[8px] font-semibold">PLAYED</span>
                 </div>
                 <div className="flex flex-col items-center">
-                  {currentPlayer.discard.length > 0 ? (
-                    <Card card={currentPlayer.discard[currentPlayer.discard.length - 1]} size="tiny" />
+                  {localPlayer.discard.length > 0 ? (
+                    <Card card={localPlayer.discard[localPlayer.discard.length - 1]} size="tiny" />
                   ) : (
                     <div className="w-16 h-22 rounded border-2 border-dashed border-slate-700 bg-slate-900/50 flex items-center justify-center">
                       <span className="text-slate-600 text-[10px]">-</span>
                     </div>
                   )}
-                  <div className="text-slate-400 text-[10px] font-bold mt-0.5">{currentPlayer.discard.length}</div>
+                  <div className="text-slate-400 text-[10px] font-bold mt-0.5">{localPlayer.discard.length}</div>
                   <span className="text-slate-500 text-[8px] font-semibold">DISCARD</span>
                 </div>
               </div>
@@ -1438,25 +1582,25 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {/* Captain & Fame */}
               <div className="flex items-center gap-3 p-3 game-panel">
                 <img
-                  src={`/cards/captain/${currentPlayer.captain.id.charAt(0).toUpperCase() + currentPlayer.captain.id.slice(1)}.png`}
-                  alt={currentPlayer.captain.name}
+                  src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                  alt={localPlayer.captain.name}
                   className="w-14 h-14 rounded object-cover border-2 border-amber-600/50"
                 />
                 <div className="flex-1">
-                  <div className="text-amber-400 font-bold">{currentPlayer.name}</div>
-                  <div className="text-slate-500 text-xs mb-1">{currentPlayer.captain.name}</div>
+                  <div className="text-amber-400 font-bold">{localPlayer.name}</div>
+                  <div className="text-slate-500 text-xs mb-1">{localPlayer.captain.name}</div>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1">
                       <span className="text-amber-400">★</span>
-                      <span className="text-amber-400 font-bold text-lg">{currentPlayer.fame}</span>
+                      <span className="text-amber-400 font-bold text-lg">{localPlayer.fame}</span>
                     </div>
                     <div ref={setCreditCounterRef} className="flex items-center gap-1">
                       <span className="text-amber-300 text-sm">💰</span>
-                      <span className="text-amber-300 font-semibold">{currentPlayer.credits}</span>
+                      <span className="text-amber-300 font-semibold">{localPlayer.credits}</span>
                     </div>
-                    {currentPlayer.movesRemaining > 0 && (
+                    {localPlayer.movesRemaining > 0 && (
                       <div className="flex items-center gap-1 px-1.5 py-0.5 bg-engines/20 rounded">
-                        <span className="text-engines font-bold text-sm">{currentPlayer.movesRemaining}</span>
+                        <span className="text-engines font-bold text-sm">{localPlayer.movesRemaining}</span>
                         <span className="text-engines text-xs">Moves</span>
                       </div>
                     )}
@@ -1467,34 +1611,34 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {/* Ship Systems */}
               <div className="space-y-2">
                 <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Ship Systems</h3>
-                <ExpandedSystemPanel system="weapons" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('weapons' as SystemType, idx)} />
-                <ExpandedSystemPanel system="computers" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('computers' as SystemType, idx)} />
-                <ExpandedSystemPanel system="engines" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('engines' as SystemType, idx)} />
-                <ExpandedSystemPanel system="logistics" player={currentPlayer} isCurrentPlayer={true} onActivate={(idx) => activateSystem('logistics' as SystemType, idx)} />
+                <ExpandedSystemPanel system="weapons" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('weapons' as SystemType, idx)} />
+                <ExpandedSystemPanel system="computers" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('computers' as SystemType, idx)} />
+                <ExpandedSystemPanel system="engines" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('engines' as SystemType, idx)} />
+                <ExpandedSystemPanel system="logistics" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('logistics' as SystemType, idx)} />
               </div>
 
               {/* Completed Missions & Trophies */}
-              {(currentPlayer.completedMissions.length > 0 || currentPlayer.trophies.length > 0) && (
+              {(localPlayer.completedMissions.length > 0 || localPlayer.trophies.length > 0) && (
                 <div className="border-t border-amber-900/20 pt-3">
-                  {currentPlayer.trophies.length > 0 && (
+                  {localPlayer.trophies.length > 0 && (
                     <div className="mb-3">
                       <h3 className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">
-                        🏆 Trophies ({currentPlayer.trophies.length})
+                        🏆 Trophies ({localPlayer.trophies.length})
                       </h3>
                       <div className="space-y-1">
-                        {currentPlayer.trophies.map((trophy) => (
+                        {localPlayer.trophies.map((trophy) => (
                           <TrophyItem key={trophy.instanceId} trophy={trophy} onView={() => viewMission(trophy)} />
                         ))}
                       </div>
                     </div>
                   )}
-                  {currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
+                  {localPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
                     <div>
                       <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                        Completed Missions ({currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length})
+                        Completed Missions ({localPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length})
                       </h3>
                       <div className="space-y-1">
-                        {currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').map((mission) => (
+                        {localPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').map((mission) => (
                           <MissionItem key={mission.instanceId} mission={mission} onView={() => viewMission(mission)} />
                         ))}
                       </div>
@@ -1507,7 +1651,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {otherPlayers.length > 0 && (
                 <div className="border-t border-amber-900/20 pt-3">
                   <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-                  <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" />
+                  <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} />
                 </div>
               )}
             </div>
@@ -1519,7 +1663,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               <div className="min-w-fit px-2">
                 <PyramidMarket
                   marketStacks={gameState.marketStacks}
-                  currentPlayer={currentPlayer}
+                  currentPlayer={localPlayer}
                   onBuyCard={buyCard}
                   onBuyAndInstall={buyAndInstall}
                   onViewCard={viewCard}
@@ -1608,8 +1752,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             {/* Hand Cards - fanned like cards held in hand */}
             <ScaledSection scale={scales.hand} fixedWidth={600} fixedHeight={340} origin="top left" className="flex-none ml-2">
               <HandDisplay
-                cards={currentPlayer.hand}
-                player={currentPlayer}
+                cards={localPlayer.hand}
+                player={localPlayer}
                 onPlayCard={playCardWithChoice}
                 onInstallCard={(card, system) => installCard(card.instanceId, system)}
                 onClearHazard={(card) => clearHazard(card.instanceId)}
@@ -1626,7 +1770,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             <ScaledSection scale={scales.market} origin="top right" className="flex-none mr-32">
               <PyramidMarket
                 marketStacks={gameState.marketStacks}
-                currentPlayer={currentPlayer}
+                currentPlayer={localPlayer}
                 onBuyCard={buyCard}
                 onBuyAndInstall={buyAndInstall}
                 onViewCard={viewCard}
@@ -1636,7 +1780,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           </div>
 
           {/* Space Track with Missions - Slightly right of center */}
-          <section className="flex-1 flex items-center justify-center px-4 pl-16">
+          <section className="flex-1 flex items-center justify-center px-4 pl-16 min-h-0 overflow-hidden">
             <ScaledSection scale={scales.spaceTrack} origin="center center">
               <SpaceTrack
                 state={gameState}
@@ -1652,19 +1796,19 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             {/* Deck pile */}
             <div className="flex flex-col items-center">
               <div className="relative">
-                {currentPlayer.deck.length > 4 && (
+                {localPlayer.deck.length > 4 && (
                   <div className="absolute top-1 left-1">
                     <CardBack size="tiny" />
                   </div>
                 )}
-                {currentPlayer.deck.length > 2 && (
+                {localPlayer.deck.length > 2 && (
                   <div className="absolute top-0.5 left-0.5">
                     <CardBack size="tiny" />
                   </div>
                 )}
                 <CardBack size="tiny" />
                 <div className="absolute -bottom-1 -right-1 bg-amber-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-lg">
-                  {currentPlayer.deck.length}
+                  {localPlayer.deck.length}
                 </div>
               </div>
               <span className="text-slate-500 text-[10px] mt-1 font-semibold">DECK</span>
@@ -1672,21 +1816,21 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
             {/* Hand count */}
             <div className="flex flex-col items-center px-2">
-              <div className="text-amber-400 font-bold text-lg">{currentPlayer.hand.length}</div>
+              <div className="text-amber-400 font-bold text-lg">{localPlayer.hand.length}</div>
               <span className="text-slate-500 text-[10px]">hand</span>
             </div>
 
             {/* Played pile (this turn) */}
             <div ref={playedPileRef} className="flex flex-col items-center">
               <div className="relative">
-                {currentPlayer.played.length > 0 ? (
+                {localPlayer.played.length > 0 ? (
                   <>
-                    {currentPlayer.played.length > 2 && (
+                    {localPlayer.played.length > 2 && (
                       <div className="absolute top-0.5 left-0.5 opacity-70">
                         <CardBack size="tiny" />
                       </div>
                     )}
-                    <Card card={currentPlayer.played[currentPlayer.played.length - 1]} size="tiny" />
+                    <Card card={localPlayer.played[localPlayer.played.length - 1]} size="tiny" />
                   </>
                 ) : (
                   <div className="w-16 h-22 rounded border-2 border-dashed border-green-700/50 bg-green-900/20 flex items-center justify-center">
@@ -1694,7 +1838,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                   </div>
                 )}
                 <div className="absolute -bottom-1 -right-1 bg-green-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-lg">
-                  {currentPlayer.played.length}
+                  {localPlayer.played.length}
                 </div>
               </div>
               <span className="text-green-500 text-[10px] mt-1 font-semibold">PLAYED</span>
@@ -1703,14 +1847,14 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             {/* Discard pile */}
             <div ref={discardPileRef} className="flex flex-col items-center">
               <div className="relative">
-                {currentPlayer.discard.length > 0 ? (
+                {localPlayer.discard.length > 0 ? (
                   <>
-                    {currentPlayer.discard.length > 2 && (
+                    {localPlayer.discard.length > 2 && (
                       <div className="absolute top-0.5 left-0.5 opacity-70">
                         <CardBack size="tiny" />
                       </div>
                     )}
-                    <Card card={currentPlayer.discard[currentPlayer.discard.length - 1]} size="tiny" />
+                    <Card card={localPlayer.discard[localPlayer.discard.length - 1]} size="tiny" />
                   </>
                 ) : (
                   <div className="w-16 h-22 rounded border-2 border-dashed border-slate-700 bg-slate-900/50 flex items-center justify-center">
@@ -1718,7 +1862,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                   </div>
                 )}
                 <div className="absolute -bottom-1 -right-1 bg-slate-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-lg">
-                  {currentPlayer.discard.length}
+                  {localPlayer.discard.length}
                 </div>
               </div>
               <span className="text-slate-500 text-[10px] mt-1 font-semibold">DISCARD</span>
@@ -1748,41 +1892,41 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           <div className="flex-none p-3 border-b border-amber-900/20">
             <div className="flex items-center gap-3">
               <img
-                src={`/cards/captain/${currentPlayer.captain.id.charAt(0).toUpperCase() + currentPlayer.captain.id.slice(1)}.png`}
-                alt={currentPlayer.captain.name}
+                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                alt={localPlayer.captain.name}
                 className="w-14 h-14 rounded object-cover border-2 border-amber-600/50"
               />
               <div className="flex-1">
-                <div className="text-amber-400 font-bold">{currentPlayer.name}</div>
-                <div className="text-slate-500 text-xs mb-1">{currentPlayer.captain.name}</div>
+                <div className="text-amber-400 font-bold">{localPlayer.name}</div>
+                <div className="text-slate-500 text-xs mb-1">{localPlayer.captain.name}</div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <span className="text-amber-400">★</span>
                     <motion.span
-                      key={`fame-${currentPlayer.fame}`}
+                      key={`fame-${localPlayer.fame}`}
                       initial={{ scale: 1.4 }}
                       animate={{ scale: 1 }}
                       transition={{ duration: 0.3, ease: 'easeOut' }}
                       className="text-amber-400 font-bold text-lg"
                     >
-                      {currentPlayer.fame}
+                      {localPlayer.fame}
                     </motion.span>
                   </div>
                   <div ref={setCreditCounterRef} className="flex items-center gap-1">
                     <span className="text-amber-300 text-sm">💰</span>
                     <motion.span
-                      key={`credits-${currentPlayer.credits}`}
+                      key={`credits-${localPlayer.credits}`}
                       initial={{ scale: 1.3, color: '#fbbf24' }}
                       animate={{ scale: 1, color: '#fcd34d' }}
                       transition={{ duration: 0.3 }}
                       className="text-amber-300 font-semibold"
                     >
-                      {currentPlayer.credits}
+                      {localPlayer.credits}
                     </motion.span>
                   </div>
-                  {currentPlayer.movesRemaining > 0 && (
+                  {localPlayer.movesRemaining > 0 && (
                     <div className="flex items-center gap-1 px-1.5 py-0.5 bg-engines/20 rounded">
-                      <span className="text-engines font-bold text-sm">{currentPlayer.movesRemaining}</span>
+                      <span className="text-engines font-bold text-sm">{localPlayer.movesRemaining}</span>
                       <span className="text-engines text-xs">Moves</span>
                     </div>
                   )}
@@ -1798,47 +1942,47 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
             {/* Weapons */}
             <ExpandedSystemPanel
               system="weapons"
-              player={currentPlayer}
-              isCurrentPlayer={true}
+              player={localPlayer}
+              isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('weapons' as SystemType, idx)}
             />
 
             {/* Computers */}
             <ExpandedSystemPanel
               system="computers"
-              player={currentPlayer}
-              isCurrentPlayer={true}
+              player={localPlayer}
+              isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('computers' as SystemType, idx)}
             />
 
             {/* Engines */}
             <ExpandedSystemPanel
               system="engines"
-              player={currentPlayer}
-              isCurrentPlayer={true}
+              player={localPlayer}
+              isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('engines' as SystemType, idx)}
             />
 
             {/* Logistics */}
             <ExpandedSystemPanel
               system="logistics"
-              player={currentPlayer}
-              isCurrentPlayer={true}
+              player={localPlayer}
+              isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('logistics' as SystemType, idx)}
             />
           </div>
 
           {/* Completed Missions & Trophies */}
-          {(currentPlayer.completedMissions.length > 0 || currentPlayer.trophies.length > 0) && (
+          {(localPlayer.completedMissions.length > 0 || localPlayer.trophies.length > 0) && (
             <div className="flex-none p-3 border-t border-amber-900/20">
               {/* Trophies Section */}
-              {currentPlayer.trophies.length > 0 && (
+              {localPlayer.trophies.length > 0 && (
                 <div className="mb-3">
                   <h3 className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider mb-2">
-                    🏆 Trophies ({currentPlayer.trophies.length})
+                    🏆 Trophies ({localPlayer.trophies.length})
                   </h3>
                   <div className="space-y-1">
-                    {currentPlayer.trophies.map((trophy) => (
+                    {localPlayer.trophies.map((trophy) => (
                       <TrophyItem key={trophy.instanceId} trophy={trophy} onView={() => viewMission(trophy)} />
                     ))}
                   </div>
@@ -1846,13 +1990,13 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               )}
 
               {/* Completed Missions (non-trophy) */}
-              {currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
+              {localPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length > 0 && (
                 <div>
                   <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                    Completed Missions ({currentPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length})
+                    Completed Missions ({localPlayer.completedMissions.filter(m => m.rewardType !== 'trophy').length})
                   </h3>
                   <div className="space-y-1">
-                    {currentPlayer.completedMissions
+                    {localPlayer.completedMissions
                       .filter(m => m.rewardType !== 'trophy')
                       .map((mission) => (
                         <MissionItem key={mission.instanceId} mission={mission} onView={() => viewMission(mission)} />
@@ -1867,7 +2011,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {otherPlayers.length > 0 && (
             <div className="flex-none p-3 border-t border-amber-900/20">
               <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-              <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" />
+              <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} />
             </div>
           )}
           </div>{/* end sidebar scale wrapper */}
@@ -1879,7 +2023,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
         isOpen={showMarket}
         onClose={toggleMarket}
         marketStacks={gameState.marketStacks}
-        currentPlayer={currentPlayer}
+        currentPlayer={localPlayer}
         onBuyCard={buyCard}
         onBuyAndInstall={buyAndInstall}
         onViewCard={viewCard}
@@ -1911,6 +2055,30 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* UI Scale Settings Panel */}
       <ScaleSettingsPanel />
+
+      {/* Game Log Panel */}
+      <GameLogPanel isOpen={showLog} onClose={toggleLog} />
+
+      {/* Opponent Tableau Viewer */}
+      {viewingOpponent && (
+        <OpponentTableauModal
+          player={viewingOpponent}
+          allPlayers={players}
+          onClose={() => setViewingOpponent(null)}
+          onViewMission={viewMission}
+        />
+      )}
+
+      {/* Reconnecting overlay */}
+      {isOnlineGame && multiplayerStatus === 'connecting' && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="game-panel p-6 text-center max-w-sm">
+            <div className="animate-spin w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-amber-400">Reconnecting...</h2>
+            <p className="text-slate-400 mt-2 text-sm">Please wait while we reconnect to the game.</p>
+          </div>
+        </div>
+      )}
 
       {/* Animation overlay (ghost cards, floating numbers) */}
       <AnimationOverlay />
