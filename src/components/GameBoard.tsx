@@ -27,7 +27,7 @@ import { GameLogPanel } from './GameLogPanel';
 import { FameTrack } from './FameTrack';
 import { ActionButtonWithTooltip } from './ActionTooltip';
 import { PLAYER_COLORS } from './SpaceTrack';
-import type { SystemType, MissionInstance, GameAction, CardInstance, Player } from '@/types';
+import type { SystemType, MissionInstance, CardInstance, Player } from '@/types';
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -802,6 +802,7 @@ function MissionRewardChoiceModal() {
 function TargetPlayerModal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
+  const animEmit = useAnimationStore((s) => s.emit);
 
   if (!gameState) return null;
 
@@ -819,7 +820,19 @@ function TargetPlayerModal() {
   });
 
   const handleSelectTarget = (playerId: number) => {
+    const target = gameState.players.find(p => p.id === playerId);
+    // Peek at the top hazard (it will be given to the target)
+    const topHazard = gameState.hazardDeck.length > 0
+      ? gameState.hazardDeck[gameState.hazardDeck.length - 1]
+      : null;
     dispatch({ type: 'RESOLVE_PENDING', choice: playerId });
+    if (target) {
+      animEmit({
+        type: 'hazard-given',
+        targetName: target.name,
+        hazardTitle: topHazard?.title ?? 'Hazard',
+      });
+    }
   };
 
   return (
@@ -1307,7 +1320,6 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   const viewMission = useGameStore((s) => s.viewMission);
   const pendingPowerChoice = useGameStore((s) => s.pendingPowerChoice);
   const storeClearHazard = useGameStore((s) => s.clearHazard);
-  const setOnActionDispatched = useGameStore((s) => s.setOnActionDispatched);
 
   // Log panel
   const showLog = useGameStore((s) => s.showLog);
@@ -1317,7 +1329,6 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   const [viewingOpponent, setViewingOpponent] = useState<Player | null>(null);
 
   // Multiplayer hooks
-  const sendGameAction = useMultiplayer((s) => s.sendGameAction);
   const multiplayerStatus = useMultiplayer((s) => s.status);
 
   // Determine if it's the local player's turn
@@ -1328,20 +1339,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     ? players[localPlayerIndex]
     : currentPlayer;
 
-  // Set up multiplayer sync callback when online game starts
-  useEffect(() => {
-    if (isOnlineGame) {
-      // Set callback to send actions to server when dispatched
-      setOnActionDispatched((action: GameAction) => {
-        sendGameAction(action);
-      });
-
-      // Clean up when leaving online game
-      return () => {
-        setOnActionDispatched(null);
-      };
-    }
-  }, [isOnlineGame, sendGameAction, setOnActionDispatched]);
+  // Note: multiplayer sync callback (onActionDispatched) is set up in App.tsx
+  // Host sends actions with state hash; non-host sends without hash.
 
   // Animation refs
   const playedPileRef = useRef<HTMLDivElement>(null);

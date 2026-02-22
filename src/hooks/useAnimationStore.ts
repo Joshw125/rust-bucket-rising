@@ -18,6 +18,7 @@ export type AnimationEventData =
   | { type: 'credits-change'; delta: number }
   | { type: 'fame-change'; delta: number }
   | { type: 'hazard-reveal' }
+  | { type: 'hazard-given'; targetName: string; hazardTitle: string }
   | { type: 'mission-complete' }
   | { type: 'turn-start'; playerName: string; playerIndex: number };
 
@@ -76,8 +77,9 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
     const fullEvent = { ...event, id } as AnimationEvent;
     set((state) => ({ events: [...state.events, fullEvent] }));
 
-    // Auto-dismiss after 1 second (safety net)
-    setTimeout(() => get().dismiss(id), 1000);
+    // Auto-dismiss (safety net) - longer for text-heavy events
+    const timeout = event.type === 'hazard-given' || event.type === 'turn-start' ? 2500 : 1000;
+    setTimeout(() => get().dismiss(id), timeout);
 
     return id;
   },

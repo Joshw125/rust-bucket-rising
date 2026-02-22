@@ -155,6 +155,52 @@ function HazardFlash({ event }: { event: AnimationEvent & { type: 'hazard-reveal
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Hazard Given Banner (confirmation toast after giving a hazard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function HazardGivenBanner({ event }: { event: AnimationEvent & { type: 'hazard-given' } }) {
+  const dismiss = useAnimationStore((s) => s.dismiss);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      onAnimationComplete={() => {
+        setTimeout(() => dismiss(event.id), 1800);
+      }}
+      style={{
+        position: 'fixed',
+        bottom: '20%',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 9999,
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        className="px-6 py-3 rounded-xl shadow-2xl"
+        style={{
+          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.3))',
+          border: '2px solid rgba(239, 68, 68, 0.6)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <div className="text-center">
+          <div className="text-lg font-bold text-red-300">
+            Hazard sent to {event.targetName}!
+          </div>
+          <div className="text-sm text-red-400/80">
+            {event.hazardTitle}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Turn Start Banner ("Your Turn!" popup)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -223,6 +269,8 @@ export function AnimationOverlay() {
             return <FloatingNumber key={event.id} event={event} />;
           case 'hazard-reveal':
             return <HazardFlash key={event.id} event={event} />;
+          case 'hazard-given':
+            return <HazardGivenBanner key={event.id} event={event} />;
           case 'turn-start':
             return <TurnStartBanner key={event.id} event={event} />;
           case 'mission-complete':

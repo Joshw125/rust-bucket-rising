@@ -166,6 +166,29 @@ function App() {
     setIsOnlineGame(true);
     initGame(gamePlayers);
     setScreen('game');
+
+    // Set up multiplayer callbacks immediately (can't wait for useEffect render cycle)
+    // so the initial state snapshot from the host is handled correctly
+    setGameCallbacks(
+      () => {}, // onGameStart already handled
+      handleRemoteGameAction,
+      handleStateSnapshot,
+      handleResyncRequested,
+    );
+
+    // Each client creates its own GameEngine with independent random shuffles,
+    // so states will differ. The host is the source of truth:
+    // - Host sends its initial state snapshot to the server and all clients
+    // - Non-host clients will receive the snapshot and load it via handleStateSnapshot
+    if (isHostRef.current) {
+      setTimeout(() => {
+        const state = useGameStore.getState().gameState;
+        const hash = useGameStore.getState().computeStateHash();
+        if (state) {
+          useMultiplayer.getState().sendStateSnapshot(state, hash);
+        }
+      }, 300);
+    }
   };
 
   // Handle game actions received from other players
