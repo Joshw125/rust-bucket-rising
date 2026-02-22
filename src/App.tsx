@@ -279,6 +279,10 @@ function App() {
       const currentGameState = useGameStore.getState().gameState;
       if (currentGameState?.gameOver && currentGameState.winner) {
         const winner = currentGameState.winner;
+        const statsTracker = useGameStore.getState().engine?.getStatsTracker();
+        const playerSummaries = statsTracker
+          ? statsTracker.generateAllSummaries(currentGameState.players)
+          : undefined;
         useMultiplayer.getState().sendGameOver(
           winner.id,
           winner.name,
@@ -294,6 +298,7 @@ function App() {
               totalCardsPlayed: p.played.length,
             })),
             turn: currentGameState.turn,
+            playerSummaries,
           }
         );
       }

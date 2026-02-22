@@ -8,10 +8,12 @@ import type {
   AIStrategy,
   SimulationConfig,
   SimulationResults,
+  EconomyStats,
 } from '@/types';
 
 import { GameEngine } from './GameEngine';
 import { AIEngine } from './AIEngine';
+import type { PlayerGameSummary } from './GameStatsTracker';
 import { CAPTAINS } from '@/data/captains';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +28,7 @@ interface GameResult {
   winnerFame: number;
   turns: number;
   finalScores: Array<{ name: string; fame: number; captain: string; strategy: AIStrategy }>;
+  playerSummaries: PlayerGameSummary[];
 }
 
 interface StrategyStats {
@@ -39,6 +42,18 @@ interface CaptainStats {
   wins: number;
   games: number;
   totalFame: number;
+}
+
+// Accumulator for economy stats (used during aggregation)
+interface EconomyAccumulator {
+  totalCreditsPerTurn: number;
+  totalCreditsSpentPerTurn: number;
+  totalPowerPerTurn: number;
+  totalPowerSpentPerTurn: number;
+  firstBuyTurns: number[];
+  firstInstallTurns: number[];
+  firstMissionTurns: number[];
+  count: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,8 +134,9 @@ export class SimulationRunner {
     // Setup players with random captains and strategies
     const players = this.setupPlayers();
 
-    // Create game engine
+    // Create game engine with stats tracking enabled
     const engine = new GameEngine(players);
+    engine.enableStatsTracking();
 
     // Create AI engines for all players
     const aiEngines = new Map<number, AIEngine>();
@@ -174,6 +190,12 @@ export class SimulationRunner {
 
     const winnerConfig = players.find(p => p.name === winner.name)!;
 
+    // Collect per-player stats
+    const statsTracker = engine.getStatsTracker();
+    const playerSummaries = statsTracker
+      ? statsTracker.generateAllSummaries(gameState.players)
+      : [];
+
     return {
       winnerId: winner.id,
       winnerName: winner.name,
@@ -187,6 +209,7 @@ export class SimulationRunner {
         captain: p.captain.id,
         strategy: players.find(pl => pl.name === p.name)!.aiStrategy!,
       })),
+      playerSummaries,
     };
   }
 
@@ -232,10 +255,33 @@ export class SimulationRunner {
     const strategyStats = new Map<AIStrategy, StrategyStats>();
     const captainStats = new Map<string, CaptainStats>();
 
+    // Balance analysis accumulators
+    const cardPopularity: Record<string, number> = {};
+    const missionPopularity: Record<string, number> = {};
+    const strategyEconomy = new Map<string, EconomyAccumulator>();
+    const captainEconomy = new Map<string, EconomyAccumulator>();
+    const strategyFameCurves = new Map<string, number[][]>();
+
     // Initialize stats
     for (const strategy of this.config.strategies) {
       strategyStats.set(strategy, { wins: 0, games: 0, totalFame: 0, avgTurns: 0 });
     }
+
+    const getOrCreateEconomy = (map: Map<string, EconomyAccumulator>, key: string): EconomyAccumulator => {
+      if (!map.has(key)) {
+        map.set(key, {
+          totalCreditsPerTurn: 0,
+          totalCreditsSpentPerTurn: 0,
+          totalPowerPerTurn: 0,
+          totalPowerSpentPerTurn: 0,
+          firstBuyTurns: [],
+          firstInstallTurns: [],
+          firstMissionTurns: [],
+          count: 0,
+        });
+      }
+      return map.get(key)!;
+    };
 
     // Aggregate results
     let totalTurns = 0;
@@ -264,6 +310,52 @@ export class SimulationRunner {
           capStats.wins++;
         }
       }
+
+      // Aggregate per-player balance stats
+      for (const summary of result.playerSummaries) {
+        // Card & mission popularity
+        for (const [card, count] of Object.entries(summary.cardsBoughtByName)) {
+          cardPopularity[card] = (cardPopularity[card] ?? 0) + count;
+        }
+        for (const [mission, count] of Object.entries(summary.missionsCompletedByName)) {
+          missionPopularity[mission] = (missionPopularity[mission] ?? 0) + count;
+        }
+
+        // Find this player's strategy
+        const playerScore = result.finalScores.find(s => s.name === summary.playerName);
+        if (!playerScore) continue;
+
+        const strategyKey = playerScore.strategy;
+        const captainKey = summary.captainId;
+
+        // Strategy economy
+        const sEcon = getOrCreateEconomy(strategyEconomy, strategyKey);
+        sEcon.totalCreditsPerTurn += summary.avgCreditsGainedPerTurn;
+        sEcon.totalCreditsSpentPerTurn += summary.avgCreditsSpentPerTurn;
+        sEcon.totalPowerPerTurn += summary.avgPowerGainedPerTurn;
+        sEcon.totalPowerSpentPerTurn += summary.avgPowerSpentPerTurn;
+        if (summary.turnOfFirstPurchase !== null) sEcon.firstBuyTurns.push(summary.turnOfFirstPurchase);
+        if (summary.turnOfFirstInstall !== null) sEcon.firstInstallTurns.push(summary.turnOfFirstInstall);
+        if (summary.turnOfFirstMission !== null) sEcon.firstMissionTurns.push(summary.turnOfFirstMission);
+        sEcon.count++;
+
+        // Captain economy
+        const cEcon = getOrCreateEconomy(captainEconomy, captainKey);
+        cEcon.totalCreditsPerTurn += summary.avgCreditsGainedPerTurn;
+        cEcon.totalCreditsSpentPerTurn += summary.avgCreditsSpentPerTurn;
+        cEcon.totalPowerPerTurn += summary.avgPowerGainedPerTurn;
+        cEcon.totalPowerSpentPerTurn += summary.avgPowerSpentPerTurn;
+        if (summary.turnOfFirstPurchase !== null) cEcon.firstBuyTurns.push(summary.turnOfFirstPurchase);
+        if (summary.turnOfFirstInstall !== null) cEcon.firstInstallTurns.push(summary.turnOfFirstInstall);
+        if (summary.turnOfFirstMission !== null) cEcon.firstMissionTurns.push(summary.turnOfFirstMission);
+        cEcon.count++;
+
+        // Fame curves by strategy
+        if (!strategyFameCurves.has(strategyKey)) {
+          strategyFameCurves.set(strategyKey, []);
+        }
+        strategyFameCurves.get(strategyKey)!.push(summary.fameOverTime);
+      }
     }
 
     // Calculate averages
@@ -273,7 +365,7 @@ export class SimulationRunner {
       stats.avgTurns = stats.games > 0 ? stats.totalFame / stats.games : 0;
     }
 
-    // Build results
+    // Build win rates
     const strategyWinRates: Record<string, number> = {};
     const strategyAvgFame: Record<string, number> = {};
 
@@ -290,6 +382,43 @@ export class SimulationRunner {
       captainAvgFame[captain] = stats.games > 0 ? stats.totalFame / stats.games : 0;
     }
 
+    // Build economy stats
+    const buildEconomyStats = (acc: EconomyAccumulator): EconomyStats => {
+      const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+      return {
+        avgCreditsPerTurn: acc.count > 0 ? acc.totalCreditsPerTurn / acc.count : 0,
+        avgCreditsSpentPerTurn: acc.count > 0 ? acc.totalCreditsSpentPerTurn / acc.count : 0,
+        avgPowerPerTurn: acc.count > 0 ? acc.totalPowerPerTurn / acc.count : 0,
+        avgPowerSpentPerTurn: acc.count > 0 ? acc.totalPowerSpentPerTurn / acc.count : 0,
+        avgTurnToFirstBuy: avg(acc.firstBuyTurns),
+        avgTurnToFirstInstall: avg(acc.firstInstallTurns),
+        avgTurnToFirstMission: avg(acc.firstMissionTurns),
+      };
+    };
+
+    const avgEconomyByStrategy: Record<string, EconomyStats> = {};
+    for (const [strategy, acc] of strategyEconomy) {
+      avgEconomyByStrategy[strategy] = buildEconomyStats(acc);
+    }
+
+    const avgEconomyByCaptain: Record<string, EconomyStats> = {};
+    for (const [captain, acc] of captainEconomy) {
+      avgEconomyByCaptain[captain] = buildEconomyStats(acc);
+    }
+
+    // Build fame curves (average fame at each turn index, per strategy)
+    const fameCurvesByStrategy: Record<string, number[]> = {};
+    for (const [strategy, curves] of strategyFameCurves) {
+      if (curves.length === 0) continue;
+      const maxLen = Math.max(...curves.map(c => c.length));
+      const avgCurve: number[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        const values = curves.filter(c => i < c.length).map(c => c[i]);
+        avgCurve.push(values.reduce((a, b) => a + b, 0) / values.length);
+      }
+      fameCurvesByStrategy[strategy] = avgCurve;
+    }
+
     return {
       gamesPlayed: this.results.length,
       avgTurns,
@@ -298,6 +427,11 @@ export class SimulationRunner {
       captainWinRates,
       captainAvgFame,
       durationMs,
+      cardPopularity,
+      missionPopularity,
+      avgEconomyByStrategy,
+      avgEconomyByCaptain,
+      fameCurvesByStrategy,
     };
   }
 
@@ -347,6 +481,70 @@ export class SimulationRunner {
       const avgFame = results.captainAvgFame[captain];
       const bar = '█'.repeat(Math.round(winRate * 20));
       lines.push(`  ${captain.padEnd(12)} ${(winRate * 100).toFixed(1).padStart(5)}% ${bar} (avg fame: ${avgFame.toFixed(1)})`);
+    }
+
+    // Economy by strategy
+    lines.push('');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('                 ECONOMY BY STRATEGY (avg/turn)');
+    lines.push('─────────────────────────────────────────────────────────────────');
+
+    for (const [strategy] of sortedStrategies) {
+      const econ = results.avgEconomyByStrategy[strategy];
+      if (!econ) continue;
+      lines.push(`  ${strategy.padEnd(12)} Credits: ${econ.avgCreditsPerTurn.toFixed(1)} earned / ${econ.avgCreditsSpentPerTurn.toFixed(1)} spent  |  Power: ${econ.avgPowerPerTurn.toFixed(1)} earned / ${econ.avgPowerSpentPerTurn.toFixed(1)} spent`);
+      const milestones: string[] = [];
+      if (econ.avgTurnToFirstBuy !== null) milestones.push(`1st buy: t${econ.avgTurnToFirstBuy.toFixed(1)}`);
+      if (econ.avgTurnToFirstInstall !== null) milestones.push(`1st install: t${econ.avgTurnToFirstInstall.toFixed(1)}`);
+      if (econ.avgTurnToFirstMission !== null) milestones.push(`1st mission: t${econ.avgTurnToFirstMission.toFixed(1)}`);
+      if (milestones.length > 0) {
+        lines.push(`               ${milestones.join('  |  ')}`);
+      }
+    }
+
+    // Economy by captain
+    lines.push('');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('                 ECONOMY BY CAPTAIN (avg/turn)');
+    lines.push('─────────────────────────────────────────────────────────────────');
+
+    for (const [captain] of sortedCaptains) {
+      const econ = results.avgEconomyByCaptain[captain];
+      if (!econ) continue;
+      lines.push(`  ${captain.padEnd(12)} Credits: ${econ.avgCreditsPerTurn.toFixed(1)} earned / ${econ.avgCreditsSpentPerTurn.toFixed(1)} spent  |  Power: ${econ.avgPowerPerTurn.toFixed(1)} earned / ${econ.avgPowerSpentPerTurn.toFixed(1)} spent`);
+    }
+
+    // Card popularity (top 10)
+    lines.push('');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('                    CARD POPULARITY (top 15)');
+    lines.push('─────────────────────────────────────────────────────────────────');
+
+    const sortedCards = Object.entries(results.cardPopularity)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15);
+
+    const maxCardBuys = sortedCards.length > 0 ? sortedCards[0][1] : 1;
+    for (const [card, count] of sortedCards) {
+      const bar = '█'.repeat(Math.round((count / maxCardBuys) * 15));
+      const perGame = (count / results.gamesPlayed).toFixed(1);
+      lines.push(`  ${card.padEnd(25)} ${String(count).padStart(4)} buys (${perGame}/game) ${bar}`);
+    }
+
+    // Mission popularity
+    lines.push('');
+    lines.push('─────────────────────────────────────────────────────────────────');
+    lines.push('                 MISSION COMPLETION RATES');
+    lines.push('─────────────────────────────────────────────────────────────────');
+
+    const sortedMissions = Object.entries(results.missionPopularity)
+      .sort((a, b) => b[1] - a[1]);
+
+    const maxMissionCompletions = sortedMissions.length > 0 ? sortedMissions[0][1] : 1;
+    for (const [mission, count] of sortedMissions) {
+      const bar = '█'.repeat(Math.round((count / maxMissionCompletions) * 15));
+      const perGame = (count / results.gamesPlayed).toFixed(2);
+      lines.push(`  ${mission.padEnd(30)} ${String(count).padStart(4)} (${perGame}/game) ${bar}`);
     }
 
     lines.push('');

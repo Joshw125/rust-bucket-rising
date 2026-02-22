@@ -32,6 +32,7 @@ import {
 } from '@/data/constants';
 
 import { STARTING_CARDS, TIER_1_CARDS, TIER_2_CARDS, TIER_3_CARDS, HAZARD_CARDS } from '@/data/cards';
+import { GameStatsTracker } from './GameStatsTracker';
 import { NEAR_MISSIONS, MID_MISSIONS, DEEP_MISSIONS } from '@/data/missions';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -321,6 +322,7 @@ export function setupHazardDeck(): CardInstance[] {
 
 export class GameEngine {
   private state: GameState;
+  private stats: GameStatsTracker | null = null;
 
   constructor(players: Array<{ name: string; captain: Captain; isAI?: boolean }>) {
     resetInstanceIdCounter();
@@ -392,6 +394,15 @@ export class GameEngine {
     this.state = snapshot;
   }
 
+  enableStatsTracking(): GameStatsTracker {
+    this.stats = new GameStatsTracker();
+    return this.stats;
+  }
+
+  getStatsTracker(): GameStatsTracker | null {
+    return this.stats;
+  }
+
   // Compute a deterministic hash of the critical game state for desync detection
   computeStateHash(): string {
     const s = this.state;
@@ -455,6 +466,11 @@ export class GameEngine {
       player.hand.push(card);
     }
 
+    // Track mid-turn draws (not the end-of-turn hand refill)
+    if (this.stats && drawn.length > 0 && this.state.phase !== 'cleanup') {
+      this.stats.onCardDrawn(player.id, drawn.length);
+    }
+
     return drawn;
   }
 
@@ -491,6 +507,7 @@ export class GameEngine {
       player.hazardsInDeck = Math.max(0, player.hazardsInDeck - 1);
     }
 
+    this.stats?.onCardTrashed(player.id);
     this.log(`${player.name} trashed ${card.title}`, 'action');
     return true;
   }
@@ -530,6 +547,9 @@ export class GameEngine {
 
     // Reset info reveal tracking for new turn
     this.state.hasRevealedInfo = false;
+
+    // Stats tracking
+    this.stats?.onTurnStart(player, this.state.turn);
 
     this.log(`Turn ${this.state.turn}: ${player.name}'s turn`, 'info');
 
@@ -694,6 +714,10 @@ export class GameEngine {
 
   private enterCleanupPhase(): void {
     const player = this.getCurrentPlayer();
+
+    // Stats tracking — capture before cleanup discards/draws
+    this.stats?.onTurnEnd(player);
+
     this.state.phase = 'cleanup';
 
     // Replace completed missions — new missions fill in at end of turn
@@ -929,11 +953,14 @@ export class GameEngine {
     }
 
     // Spend the power
+    let totalSpent = 0;
     for (const system of SYSTEMS) {
       const required = cost[system] ?? 0;
       player.currentPower[system] -= required;
+      totalSpent += required;
     }
 
+    this.stats?.onPowerSpent(player.id, totalSpent);
     return true;
   }
 
@@ -1300,6 +1327,7 @@ export class GameEngine {
     toPlayer.discard.push(hazard);
     toPlayer.hazardsInDeck++;
 
+    this.stats?.onHazardGiven(fromPlayer.id, toPlayer.id);
     this.log(`${fromPlayer.name} gave ${toPlayer.name} a hazard: ${hazard.title}`, 'hazard');
 
     // Mercenary captain ability
@@ -1407,14 +1435,17 @@ export class GameEngine {
     // Pay costs
     if (cost.credits) {
       player.credits -= cost.credits;
+      this.stats?.onCreditSpent(player.id, cost.credits);
     }
 
     if (cost.power) {
-      this.spendPower(player, cost.power);
+      this.spendPower(player, cost.power); // spendPower already tracks stats
     }
 
     if (cost.spendAll) {
+      const spent = player.currentPower[cost.spendAll];
       player.currentPower[cost.spendAll] = 0;
+      this.stats?.onPowerSpent(player.id, spent);
     }
 
     if (cost.discard && discardCardIds) {
@@ -1433,9 +1464,11 @@ export class GameEngine {
           remaining--;
         }
       }
+      this.stats?.onPowerSpent(player.id, cost.powerFromDifferent - remaining);
     }
 
     player.hazardsInDeck--;
+    this.stats?.onHazardCleared(player.id);
     this.log(`${player.name} cleared ${hazard.title}`, 'action');
 
     // Pass on clear
@@ -1551,6 +1584,9 @@ export class GameEngine {
     player.credits -= cost;
     player.discard.push(card);
 
+    this.stats?.onCreditSpent(player.id, cost);
+    this.stats?.onCardBought(player.id, card.title);
+
     // Buying from a stack reveals info - mark info revealed
     this.state.hasRevealedInfo = true;
 
@@ -1614,6 +1650,10 @@ export class GameEngine {
 
     // Pay total cost
     player.credits -= totalCost;
+
+    this.stats?.onCreditSpent(player.id, totalCost);
+    this.stats?.onCardBought(player.id, card.title);
+    this.stats?.onCardInstalled(player.id);
 
     // Buying from a stack reveals info - mark info revealed
     this.state.hasRevealedInfo = true;
@@ -1702,6 +1742,7 @@ export class GameEngine {
 
     // Spend power (with discount distributed as total budget across systems)
     let spendDiscountRemaining = player.missionDiscount;
+    let missionPowerSpent = 0;
     for (const system of SYSTEMS) {
       const base = requirements[system] ?? 0;
       if (base <= 0) continue;
@@ -1710,8 +1751,10 @@ export class GameEngine {
       const required = Math.max(0, base - discountForThis);
       if (required > 0) {
         player.currentPower[system] -= required;
+        missionPowerSpent += required;
       }
     }
+    this.stats?.onPowerSpent(player.id, missionPowerSpent);
 
     // Reset mission discount
     player.missionDiscount = 0;
@@ -1719,11 +1762,13 @@ export class GameEngine {
     // Warrant Issued hazard: pay 2 extra credits
     if (this.playerHasActiveHazard(player, 'warrant-issued')) {
       player.credits -= 2;
+      this.stats?.onCreditSpent(player.id, 2);
       this.log(`  Warrant Issued: -2 Credits`, 'hazard');
     }
 
     // Grant fame
     player.fame += mission.fame;
+    this.stats?.onMissionCompleted(player.id, mission.title);
     this.log(`${player.name} completed "${mission.title}" (+${mission.fame} Fame)`, 'action');
 
     // Apply rewards
@@ -1913,6 +1958,8 @@ export class GameEngine {
 
     // Spend power
     player.currentPower[system] -= cost;
+    this.stats?.onPowerSpent(player.id, cost);
+    this.stats?.onSystemActivated(player.id);
 
     this.log(`${player.name} activated ${system}: ${ability.description}`, 'action');
 
@@ -2044,6 +2091,9 @@ export class GameEngine {
     player.credits -= cost;
     player.installDiscount = 0;
 
+    this.stats?.onCreditSpent(player.id, cost);
+    this.stats?.onCardInstalled(player.id);
+
     // Remove old installation if present - goes to discard pile
     const oldInstallation = player.installations[targetSystem];
     if (oldInstallation) {
@@ -2157,6 +2207,7 @@ export class GameEngine {
             cost += 1;
           }
           player.currentPower.engines -= cost;
+          this.stats?.onPowerSpent(player.id, cost);
           this.log(`${player.name} spent ${cost}⚡ Engines to move`, 'action');
           return this.move(player, action.direction);
         }

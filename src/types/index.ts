@@ -475,6 +475,16 @@ export type GameAction =
 // Simulation
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface EconomyStats {
+  avgCreditsPerTurn: number;
+  avgCreditsSpentPerTurn: number;
+  avgPowerPerTurn: number;
+  avgPowerSpentPerTurn: number;
+  avgTurnToFirstBuy: number | null;
+  avgTurnToFirstInstall: number | null;
+  avgTurnToFirstMission: number | null;
+}
+
 export interface SimulationResults {
   gamesPlayed: number;
   avgTurns: number;
@@ -483,6 +493,13 @@ export interface SimulationResults {
   captainWinRates: Record<string, number>;
   captainAvgFame: Record<string, number>;
   durationMs: number;
+
+  // Balance analysis data
+  cardPopularity: Record<string, number>;
+  missionPopularity: Record<string, number>;
+  avgEconomyByStrategy: Record<string, EconomyStats>;
+  avgEconomyByCaptain: Record<string, EconomyStats>;
+  fameCurvesByStrategy: Record<string, number[]>;
 }
 
 export interface SimulationConfig {

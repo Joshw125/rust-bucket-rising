@@ -125,6 +125,7 @@ export const useGameStore = create<GameStore>()(
     // Initialize a new game
     initGame: (players) => {
       const engine = new GameEngine(players);
+      engine.enableStatsTracking();
       const aiEngines = new Map<number, AIEngine>();
 
       // Create AI engines for AI players
