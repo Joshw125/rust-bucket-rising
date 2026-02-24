@@ -38,6 +38,9 @@ interface MultiplayerStore extends MultiplayerState {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   isRejoining: boolean;
 
+  // Buffered snapshot for rejoin (arrives before game engine is created)
+  pendingSnapshot: { snapshot: unknown; stateHash: string } | null;
+
   // Connection actions
   connect: () => void;
   disconnect: () => void;
@@ -98,6 +101,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
   onGameAction: null,
   onStateSnapshot: null,
   onResyncRequested: null,
+  pendingSnapshot: null,
 
   // Reconnection state
   lastRoomCode: null,
@@ -177,6 +181,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
       lastPlayerName: null,
       reconnectAttempt: 0,
       isRejoining: false,
+      pendingSnapshot: null,
     });
   },
 
@@ -217,7 +222,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
   leaveRoom: () => {
     get()._send({ type: 'LEAVE_ROOM' });
     get()._stopReconnect();
-    set({ room: null, chatMessages: [], lastRoomCode: null, lastPlayerName: null, isRejoining: false });
+    set({ room: null, chatMessages: [], lastRoomCode: null, lastPlayerName: null, isRejoining: false, pendingSnapshot: null });
   },
 
   // Select a captain
@@ -432,6 +437,8 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
 
       case 'STATE_SNAPSHOT': {
         const { onStateSnapshot } = get();
+        // Always buffer for rejoin scenarios (snapshot may arrive before game engine exists)
+        set({ pendingSnapshot: { snapshot: message.snapshot, stateHash: message.stateHash } });
         if (onStateSnapshot) {
           onStateSnapshot(message.snapshot, message.stateHash);
         }
@@ -473,7 +480,15 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
 
   // Set game state callbacks
   setGameCallbacks: (onStart, onAction, onSnapshot, onResync) => {
+    const { pendingSnapshot } = get();
     set({ onGameStart: onStart, onGameAction: onAction, onStateSnapshot: onSnapshot, onResyncRequested: onResync });
+
+    // If there's a buffered snapshot from a rejoin, deliver it to the new handler
+    if (pendingSnapshot && onSnapshot) {
+      set({ pendingSnapshot: null });
+      // Deliver after current synchronous block to ensure engine is fully initialized
+      setTimeout(() => onSnapshot(pendingSnapshot.snapshot, pendingSnapshot.stateHash), 0);
+    }
   },
 }));
 

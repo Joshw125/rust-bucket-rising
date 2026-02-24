@@ -3,7 +3,7 @@
 // Create/join multiplayer games with card-art captain selection
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import {
   useMultiplayer,
@@ -240,6 +240,9 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
   const clearError = useMultiplayer((s) => s.clearError);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
 
+  // Track whether game has already started (to distinguish normal start from rejoin)
+  const hasGameStartedRef = useRef(false);
+
   // Connect on mount
   useEffect(() => {
     if (status === 'disconnected') {
@@ -247,11 +250,16 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
     }
   }, [status, connect]);
 
-  // Set up game start callback
+  // Set up game start callback (only when not rejoining an active game)
   useEffect(() => {
+    // Don't overwrite callbacks with no-ops if we're rejoining an active game
+    // (handleOnlineGameStart in App.tsx will set the proper callbacks)
+    if (room?.status === 'playing') return;
+
     setGameCallbacks(
       (players) => {
         if (playerId) {
+          hasGameStartedRef.current = true;
           onGameStart(players, playerId);
         }
       },
@@ -259,11 +267,26 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
       () => {}, // Snapshot handler set up in App.tsx
       () => {}, // Resync handler set up in App.tsx
     );
-  }, [setGameCallbacks, onGameStart, playerId]);
+  }, [setGameCallbacks, onGameStart, playerId, room?.status]);
 
-  // Auto-switch to lobby when room is joined
+  // Handle rejoin: we joined a room that's already in 'playing' status
   useEffect(() => {
-    if (room) {
+    if (room?.status === 'playing' && playerId && !hasGameStartedRef.current) {
+      hasGameStartedRef.current = true;
+      // Reconstruct the player array from room data (same format as GAME_STARTED)
+      const players = room.players.map((p, idx) => ({
+        id: idx,
+        name: p.name,
+        captainId: p.captainId || 'scrapper',
+        networkId: p.id,
+      }));
+      onGameStart(players, playerId);
+    }
+  }, [room, playerId, onGameStart]);
+
+  // Auto-switch to lobby when room is joined (but not if game is already playing)
+  useEffect(() => {
+    if (room && room.status !== 'playing') {
       setScreen('lobby');
     }
   }, [room]);

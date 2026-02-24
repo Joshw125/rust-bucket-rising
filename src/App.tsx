@@ -197,6 +197,19 @@ function App() {
     if (fromPlayerIndex !== localPlayerIndex) {
       applyRemoteAction(action);
 
+      // HOST DUTY: After any player's END_TURN, send a snapshot to keep everyone in sync.
+      // This is critical because each client shuffles independently (Math.random()),
+      // so without a snapshot after every turn, states will diverge.
+      if (isHostRef.current && action.type === 'END_TURN') {
+        setTimeout(() => {
+          const finalState = useGameStore.getState().gameState;
+          const finalHash = useGameStore.getState().computeStateHash();
+          if (finalState) {
+            useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
+          }
+        }, 100);
+      }
+
       // After applying, check state hash if provided
       if (remoteStateHash) {
         const localHash = computeStateHash();
@@ -369,6 +382,11 @@ function App() {
           <button
             onClick={() => {
               if (confirm('Are you sure you want to quit this game?')) {
+                if (isOnlineGame) {
+                  useMultiplayer.getState().leaveRoom();
+                  setIsOnlineGame(false);
+                  setLocalPlayerIndex(null);
+                }
                 setScreen('menu');
               }
             }}
