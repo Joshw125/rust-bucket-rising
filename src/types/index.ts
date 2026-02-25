@@ -389,7 +389,7 @@ export interface LogEntry {
 }
 
 export interface PendingAction {
-  type: 'powerAllocation' | 'targetPlayer' | 'selectCard' | 'draw3keep1' | 'trashCard' | 'installChoice' | 'revealHazards' | 'missionReward' | 'missionRewardChoice' | 'moveOtherPlayer';
+  type: 'powerAllocation' | 'targetPlayer' | 'selectCard' | 'draw3keep1' | 'trashCard' | 'installChoice' | 'revealHazards' | 'missionReward' | 'missionRewardChoice' | 'moveOtherPlayer' | 'hazardClearPower';
   playerId: number;
   data?: {
     amount?: number;
@@ -407,6 +407,7 @@ export interface PendingAction {
     bonusIfHadHazard?: { power?: number; credits?: number }; // For Scrap Shot
     moveOther?: number; // Chain moveOther after giveHazard
     targetPlayerIds?: number[]; // Valid target player IDs for moveOtherPlayer
+    fromInstallPhase?: boolean; // Power allocation is from turn-start installation effects
   };
 }
 

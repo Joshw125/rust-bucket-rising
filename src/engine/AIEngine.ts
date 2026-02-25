@@ -155,6 +155,18 @@ export class AIEngine {
         // Choose the best system for power
         return this.chooseBestSystemForPower(state, player, pending.data?.powerAmount ?? 1);
 
+      case 'hazardClearPower': {
+        // Pick N systems to spend 1 power each from (prefer systems with most power)
+        const count = pending.data?.powerAmount ?? 2;
+        const systemsByPower = (['weapons', 'computers', 'engines', 'logistics'] as const)
+          .filter(s => player.currentPower[s] >= 1)
+          .sort((a, b) => player.currentPower[b] - player.currentPower[a])
+          .slice(0, count);
+        const alloc: Record<string, number> = { weapons: 0, computers: 0, engines: 0, logistics: 0 };
+        for (const s of systemsByPower) alloc[s] = 1;
+        return { type: 'RESOLVE_PENDING', choice: alloc };
+      }
+
       case 'missionRewardChoice':
         // Choose the better reward option
         return this.chooseMissionReward(pending.data?.mission);

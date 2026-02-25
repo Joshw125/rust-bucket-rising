@@ -27,8 +27,31 @@ import { GameLogPanel } from './GameLogPanel';
 import { FameTrack } from './FameTrack';
 import { ActionButtonWithTooltip } from './ActionTooltip';
 import { PLAYER_COLORS } from './SpaceTrack';
-import type { SystemType, MissionInstance, CardInstance, Player } from '@/types';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import type { SystemType, MissionInstance, CardInstance, Player, Captain } from '@/types';
+import { useState, useCallback, useEffect, useRef, createContext, useContext } from 'react';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Game Board Context (provides online game info to modal components)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface GameBoardContextValue {
+  isOnlineGame: boolean;
+  localPlayerId: number | null; // The local player's player.id in online mode
+}
+
+const GameBoardContext = createContext<GameBoardContextValue>({
+  isOnlineGame: false,
+  localPlayerId: null,
+});
+
+/** Returns true if the pending action should be shown to the local player */
+function useShouldShowPendingAction(): boolean {
+  const { isOnlineGame, localPlayerId } = useContext(GameBoardContext);
+  const gameState = useGameStore((s) => s.gameState);
+  if (!gameState?.pendingAction) return false;
+  if (!isOnlineGame) return true; // Local game: always show
+  return gameState.pendingAction.playerId === localPlayerId;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Header Component
@@ -39,9 +62,6 @@ function GameHeader() {
   const currentPlayer = useCurrentPlayer();
   const toggleScalePanel = useUIScaleStore((s) => s.toggleScalePanel);
   const showScalePanel = useUIScaleStore((s) => s.showScalePanel);
-  const toggleLog = useGameStore((s) => s.toggleLog);
-  const showLog = useGameStore((s) => s.showLog);
-
   if (!gameState || !currentPlayer) return null;
 
   const playerColor = PLAYER_COLORS[gameState.currentPlayerIndex % PLAYER_COLORS.length];
@@ -64,18 +84,6 @@ function GameHeader() {
           title="UI Scale Settings"
         >
           ⚙️
-        </button>
-        <button
-          onClick={toggleLog}
-          className={clsx(
-            'text-sm px-2 py-1 rounded transition-all',
-            showLog
-              ? 'bg-amber-500/20 text-amber-400'
-              : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
-          )}
-          title="Game Log"
-        >
-          Log
         </button>
       </div>
 
@@ -494,11 +502,13 @@ function ViewerModal() {
 function HazardRevealModal() {
   const gameState = useGameStore((s) => s.gameState);
   const resolveHazardReveal = useGameStore((s) => s.resolveHazardReveal);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'revealHazards') return null;
+  if (!shouldShow) return null;
 
   const hazards = pendingAction.data?.hazards ?? [];
   if (hazards.length === 0) return null;
@@ -553,16 +563,19 @@ function HazardRevealModal() {
 function TrashCardModal() {
   const gameState = useGameStore((s) => s.gameState);
   const resolveTrashCard = useGameStore((s) => s.resolveTrashCard);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'trashCard') return null;
+  if (!shouldShow) return null;
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-  const handCards = currentPlayer.hand.filter(c => c.type !== 'hazard');
-  const playedCards = currentPlayer.played.filter(c => c.type !== 'hazard');
-  const discardCards = currentPlayer.discard.filter(c => c.type !== 'hazard');
+  const source = pendingAction.data?.source;
+  const handCards = currentPlayer.hand;
+  const playedCards = currentPlayer.played;
+  const discardCards = source === 'hand' ? [] : currentPlayer.discard;
 
   const totalCards = handCards.length + playedCards.length + discardCards.length;
 
@@ -654,11 +667,13 @@ function TrashCardModal() {
 function MissionRewardModal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'missionReward') return null;
+  if (!shouldShow) return null;
 
   const mission = pendingAction.data?.mission;
   const powerAmount = pendingAction.data?.powerAmount ?? 0;
@@ -749,11 +764,13 @@ function MissionRewardModal() {
 function MissionRewardChoiceModal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'missionRewardChoice') return null;
+  if (!shouldShow) return null;
 
   const mission = pendingAction.data?.mission;
   const choices = mission?.rewardData?.choice ?? [];
@@ -803,11 +820,13 @@ function TargetPlayerModal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
   const animEmit = useAnimationStore((s) => s.emit);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'targetPlayer') return null;
+  if (!shouldShow) return null;
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
   const source = (pendingAction.data as any)?.source;
@@ -887,11 +906,13 @@ function TargetPlayerModal() {
 function Draw3Keep1Modal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'draw3keep1') return null;
+  if (!shouldShow) return null;
 
   const cards = pendingAction.data?.cards ?? [];
 
@@ -935,11 +956,13 @@ function Draw3Keep1Modal() {
 function MoveOtherPlayerModal() {
   const gameState = useGameStore((s) => s.gameState);
   const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
 
   if (!gameState) return null;
 
   const pendingAction = gameState.pendingAction;
   if (pendingAction?.type !== 'moveOtherPlayer') return null;
+  if (!shouldShow) return null;
 
   const validTargetIds = pendingAction.data?.targetPlayerIds ?? [];
   const validTargets = gameState.players.filter(p => validTargetIds.includes(p.id));
@@ -1172,6 +1195,326 @@ function PowerChoiceModal() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Power Allocation Pending Modal - For engine pendingAction 'powerAllocation'
+// (installation power choices at turn start and mid-turn installs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PowerAllocationPendingModal() {
+  const shouldShow = useShouldShowPendingAction();
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+
+  const pendingAction = gameState?.pendingAction;
+  const [allocation, setAllocation] = useState<Record<SystemType, number>>({
+    weapons: 0, computers: 0, engines: 0, logistics: 0,
+  });
+
+  // Reset allocation when pending changes
+  const prevCardRef = useRef<string | null>(null);
+  const cardTitle = pendingAction?.data?.cardTitle || '';
+  if (cardTitle !== prevCardRef.current) {
+    prevCardRef.current = cardTitle;
+    setAllocation({ weapons: 0, computers: 0, engines: 0, logistics: 0 });
+  }
+
+  if (!shouldShow || pendingAction?.type !== 'powerAllocation') return null;
+
+  const total = pendingAction.data?.powerAmount ?? 0;
+  const allocated = allocation.weapons + allocation.computers + allocation.engines + allocation.logistics;
+  const remaining = total - allocated;
+
+  const systems = [
+    { key: 'weapons' as SystemType, name: 'Weapons', color: 'bg-weapons', textColor: 'text-weapons-light' },
+    { key: 'computers' as SystemType, name: 'Computers', color: 'bg-computers', textColor: 'text-computers-light' },
+    { key: 'engines' as SystemType, name: 'Engines', color: 'bg-engines', textColor: 'text-engines-light' },
+    { key: 'logistics' as SystemType, name: 'Logistics', color: 'bg-logistics', textColor: 'text-logistics-light' },
+  ];
+
+  // Quick path: single power — just click a system button
+  if (total === 1) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="game-panel p-4 max-w-xs" onClick={(e) => e.stopPropagation()}>
+          <div className="text-center mb-3">
+            <div className="text-amber-400 font-bold text-sm">{cardTitle}</div>
+            <div className="text-slate-400 text-xs">+1⚡ — Pick a system</div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {systems.map((sys) => (
+              <button
+                key={sys.key}
+                className={clsx(
+                  'py-2 rounded-lg font-bold text-sm transition-all',
+                  sys.color, 'hover:brightness-110 text-white shadow-lg',
+                )}
+                onClick={() => {
+                  dispatch({ type: 'RESOLVE_PENDING', choice: { weapons: 0, computers: 0, engines: 0, logistics: 0, [sys.key]: 1 } });
+                }}
+              >
+                {sys.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const adjust = (sys: SystemType, delta: number) => {
+    setAllocation((prev) => {
+      const newVal = Math.max(0, prev[sys] + delta);
+      const othersTotal = Object.entries(prev).reduce((sum, [k, v]) => k === sys ? sum : sum + v, 0);
+      if (newVal + othersTotal > total) return prev;
+      return { ...prev, [sys]: newVal };
+    });
+  };
+
+  const assignAll = (sys: SystemType) => {
+    setAllocation({ weapons: 0, computers: 0, engines: 0, logistics: 0, [sys]: total });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="game-panel p-4 max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="text-center mb-3">
+          <div className="text-amber-400 font-bold text-sm">{cardTitle}</div>
+          <div className="text-slate-400 text-xs">
+            Distribute +{total}⚡ across systems
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {systems.map((sys) => (
+            <div key={sys.key} className="flex items-center gap-2">
+              <div className={clsx('w-20 text-xs font-semibold', sys.textColor)}>{sys.name}</div>
+
+              <button
+                className={clsx(
+                  'w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all',
+                  allocation[sys.key] > 0
+                    ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => adjust(sys.key, -1)}
+                disabled={allocation[sys.key] <= 0}
+              >
+                −
+              </button>
+
+              <span className={clsx(
+                'w-8 text-center text-lg font-bold',
+                allocation[sys.key] > 0 ? sys.textColor : 'text-slate-600',
+              )}>
+                {allocation[sys.key]}
+              </span>
+
+              <button
+                className={clsx(
+                  'w-7 h-7 rounded flex items-center justify-center font-bold text-sm transition-all',
+                  remaining > 0
+                    ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => adjust(sys.key, 1)}
+                disabled={remaining <= 0}
+              >
+                +
+              </button>
+
+              <button
+                className={clsx(
+                  'px-2 py-0.5 rounded text-xs font-semibold transition-all',
+                  remaining > 0 || allocation[sys.key] < total
+                    ? `${sys.color} hover:brightness-110 text-white`
+                    : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => assignAll(sys.key)}
+              >
+                All
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          className={clsx(
+            'w-full py-2 mt-3 rounded-lg font-bold text-sm transition-all',
+            remaining === 0
+              ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+          )}
+          onClick={() => {
+            if (remaining === 0) {
+              dispatch({ type: 'RESOLVE_PENDING', choice: allocation });
+            }
+          }}
+          disabled={remaining !== 0}
+        >
+          {remaining === 0 ? 'Confirm ⚡' : `Assign ${remaining} more ⚡`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hazard Clear Power Modal - Choose systems to spend 1⚡ each from
+// ─────────────────────────────────────────────────────────────────────────────
+
+function HazardClearPowerModal() {
+  const shouldShow = useShouldShowPendingAction();
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+
+  const pendingAction = gameState?.pendingAction;
+  const currentPlayer = gameState?.players[gameState.currentPlayerIndex];
+  const [selected, setSelected] = useState<Set<SystemType>>(new Set());
+
+  // Reset when pending changes
+  const prevCardRef = useRef<string | null>(null);
+  const cardTitle = pendingAction?.data?.cardTitle || '';
+  if (cardTitle !== prevCardRef.current) {
+    prevCardRef.current = cardTitle;
+    if (selected.size > 0) setSelected(new Set());
+  }
+
+  if (!shouldShow || pendingAction?.type !== 'hazardClearPower' || !currentPlayer) return null;
+
+  const required = pendingAction.data?.powerAmount ?? 2;
+
+  const systems = [
+    { key: 'weapons' as SystemType, name: 'Weapons', color: 'bg-weapons', textColor: 'text-weapons-light' },
+    { key: 'computers' as SystemType, name: 'Computers', color: 'bg-computers', textColor: 'text-computers-light' },
+    { key: 'engines' as SystemType, name: 'Engines', color: 'bg-engines', textColor: 'text-engines-light' },
+    { key: 'logistics' as SystemType, name: 'Logistics', color: 'bg-logistics', textColor: 'text-logistics-light' },
+  ];
+
+  const toggle = (sys: SystemType) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(sys)) {
+        next.delete(sys);
+      } else if (next.size < required) {
+        next.add(sys);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="game-panel p-4 max-w-xs" onClick={(e) => e.stopPropagation()}>
+        <div className="text-center mb-3">
+          <div className="text-red-400 font-bold text-sm">Clear: {cardTitle}</div>
+          <div className="text-slate-400 text-xs">
+            Spend 1⚡ from {required} different systems
+          </div>
+        </div>
+        <div className="space-y-2">
+          {systems.map((sys) => {
+            const hasPower = currentPlayer.currentPower[sys.key] >= 1;
+            const isSelected = selected.has(sys.key);
+            return (
+              <button
+                key={sys.key}
+                className={clsx(
+                  'w-full py-2 px-3 rounded-lg font-bold text-sm transition-all flex items-center justify-between',
+                  isSelected
+                    ? `${sys.color} text-white ring-2 ring-white/50`
+                    : hasPower
+                      ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                      : 'bg-slate-800 text-slate-600 cursor-not-allowed',
+                )}
+                onClick={() => hasPower && toggle(sys.key)}
+                disabled={!hasPower}
+              >
+                <span>{sys.name}</span>
+                <span className={clsx('text-xs', isSelected ? 'text-white' : sys.textColor)}>
+                  {currentPlayer.currentPower[sys.key]}⚡
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          className={clsx(
+            'w-full py-2 mt-3 rounded-lg font-bold text-sm transition-all',
+            selected.size === required
+              ? 'bg-amber-500 hover:bg-amber-400 text-slate-900'
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed',
+          )}
+          onClick={() => {
+            if (selected.size === required) {
+              const alloc = { weapons: 0, computers: 0, engines: 0, logistics: 0 };
+              for (const sys of selected) alloc[sys] = 1;
+              dispatch({ type: 'RESOLVE_PENDING', choice: alloc });
+            }
+          }}
+          disabled={selected.size !== required}
+        >
+          {selected.size === required
+            ? 'Confirm Clear'
+            : `Select ${required - selected.size} more system${required - selected.size > 1 ? 's' : ''}`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Captain Viewer Modal - Shows captain portrait, name, and ability
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CaptainViewerModal({
+  captain,
+  onClose,
+}: {
+  captain: Captain;
+  onClose: () => void;
+}) {
+  const filename = captain.id.charAt(0).toUpperCase() + captain.id.slice(1);
+  const imgPath = `/cards/captain/${filename}.png`;
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onClose}>
+      <div className="game-panel p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+        {/* Captain portrait */}
+        <div className="flex justify-center mb-3">
+          <img
+            src={imgPath}
+            alt={captain.name}
+            className="w-24 h-24 rounded-lg object-cover border-2 border-amber-500/50 shadow-lg"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        </div>
+
+        {/* Captain name */}
+        <h3 className="text-amber-400 font-bold text-lg text-center mb-2">{captain.name}</h3>
+
+        {/* Ability description */}
+        <div className="bg-slate-800/80 rounded-lg p-3 mb-2">
+          <div className="text-slate-400 text-xs font-semibold mb-1 uppercase tracking-wider">Ability</div>
+          <p className="text-white text-sm">{captain.effect}</p>
+        </div>
+
+        {/* Flavor text */}
+        {captain.flavor && (
+          <p className="text-slate-500 text-xs italic text-center">{captain.flavor}</p>
+        )}
+
+        <button
+          onClick={onClose}
+          className="w-full mt-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Opponent Tableau Viewer Modal
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1321,12 +1664,11 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   const pendingPowerChoice = useGameStore((s) => s.pendingPowerChoice);
   const storeClearHazard = useGameStore((s) => s.clearHazard);
 
-  // Log panel
-  const showLog = useGameStore((s) => s.showLog);
-  const toggleLog = useGameStore((s) => s.toggleLog);
-
   // Opponent viewer state
   const [viewingOpponent, setViewingOpponent] = useState<Player | null>(null);
+
+  // Captain viewer state
+  const [viewingCaptain, setViewingCaptain] = useState<Captain | null>(null);
 
   // Multiplayer hooks
   const multiplayerStatus = useMultiplayer((s) => s.status);
@@ -1387,6 +1729,24 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     }
     prevTurnRef.current = turnKey;
   }, [gameState?.currentPlayerIndex, gameState?.turn, gameState?.phase, currentPlayer, animEmit]);
+
+  // Turn timer reminder (shows after 60 seconds)
+  const TURN_TIMER_THRESHOLD = 60;
+  const [turnElapsed, setTurnElapsed] = useState(0);
+  const turnTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // Reset timer whenever the current player changes
+    setTurnElapsed(0);
+    if (turnTimerRef.current) clearInterval(turnTimerRef.current);
+    turnTimerRef.current = setInterval(() => {
+      setTurnElapsed(prev => prev + 1);
+    }, 1000);
+
+    return () => {
+      if (turnTimerRef.current) clearInterval(turnTimerRef.current);
+    };
+  }, [gameState?.currentPlayerIndex, gameState?.turn]);
 
   // Wrapped actions that check turn ownership
   const playCardWithChoice = useCallback((card: CardInstance, rect?: DOMRect) => {
@@ -1449,16 +1809,26 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   // Other players (from local player's perspective)
   const otherPlayers = players.filter(p => p.id !== localPlayer.id);
 
+  // Context value for modal gating in online mode
+  const boardContextValue: GameBoardContextValue = {
+    isOnlineGame,
+    localPlayerId: localPlayer.id,
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // MOBILE LAYOUT
   // ─────────────────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
+      <GameBoardContext.Provider value={boardContextValue}>
       <div className="game-container">
         {/* Shared overlays — these are fixed/portal so they work on any layout */}
         {isGameOver && <VictoryScreen />}
         <ViewerModal />
+        {viewingCaptain && <CaptainViewerModal captain={viewingCaptain} onClose={() => setViewingCaptain(null)} />}
         {pendingPowerChoice && <PowerChoiceModal />}
+        <PowerAllocationPendingModal />
+        <HazardClearPowerModal />
         <HazardRevealModal />
         <TrashCardModal />
         <MissionRewardModal />
@@ -1488,11 +1858,16 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               <img
                 src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
                 alt={localPlayer.captain.name}
-                className="w-8 h-8 rounded object-cover border border-amber-600/50"
+                className="w-8 h-8 rounded object-cover border border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                onClick={() => setViewingCaptain(localPlayer.captain)}
+                title={`View ${localPlayer.captain.name}'s ability`}
               />
               <div>
                 <div className="text-amber-400 font-bold text-sm leading-none">{localPlayer.name}</div>
-                <div className="text-slate-500 text-[10px] leading-none mt-0.5">{localPlayer.captain.name}</div>
+                <div
+                  className="text-slate-500 text-[10px] leading-none mt-0.5 cursor-pointer hover:text-amber-400 transition-colors"
+                  onClick={() => setViewingCaptain(localPlayer.captain)}
+                >{localPlayer.captain.name}</div>
               </div>
             </div>
             <div className="flex items-center gap-3 text-xs">
@@ -1583,11 +1958,16 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
                 <img
                   src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
                   alt={localPlayer.captain.name}
-                  className="w-14 h-14 rounded object-cover border-2 border-amber-600/50"
+                  className="w-14 h-14 rounded object-cover border-2 border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                  onClick={() => setViewingCaptain(localPlayer.captain)}
+                  title={`View ${localPlayer.captain.name}'s ability`}
                 />
                 <div className="flex-1">
                   <div className="text-amber-400 font-bold">{localPlayer.name}</div>
-                  <div className="text-slate-500 text-xs mb-1">{localPlayer.captain.name}</div>
+                  <div
+                    className="text-slate-500 text-xs mb-1 cursor-pointer hover:text-amber-400 transition-colors"
+                    onClick={() => setViewingCaptain(localPlayer.captain)}
+                  >{localPlayer.captain.name}</div>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1">
                       <span className="text-amber-400">★</span>
@@ -1650,7 +2030,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {otherPlayers.length > 0 && (
                 <div className="border-t border-amber-900/20 pt-3">
                   <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-                  <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} />
+                  <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} onViewCaptain={setViewingCaptain} />
                 </div>
               )}
             </div>
@@ -1678,6 +2058,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
         <MobileActionBar isMyTurn={isMyTurn} />
         <MobileTabBar />
       </div>
+      </GameBoardContext.Provider>
     );
   }
 
@@ -1686,6 +2067,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
+    <GameBoardContext.Provider value={boardContextValue}>
     <div className="game-container">
       {/* Victory overlay */}
       {isGameOver && <VictoryScreen />}
@@ -1728,6 +2110,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* Card/Mission viewer modal */}
       <ViewerModal />
+      {viewingCaptain && <CaptainViewerModal captain={viewingCaptain} onClose={() => setViewingCaptain(null)} />}
 
       {/* Two-column layout: Main game | Systems sidebar */}
       <div className="flex-1 flex min-h-0">
@@ -1893,11 +2276,16 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               <img
                 src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
                 alt={localPlayer.captain.name}
-                className="w-14 h-14 rounded object-cover border-2 border-amber-600/50"
+                className="w-14 h-14 rounded object-cover border-2 border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                onClick={() => setViewingCaptain(localPlayer.captain)}
+                title={`View ${localPlayer.captain.name}'s ability`}
               />
               <div className="flex-1">
                 <div className="text-amber-400 font-bold">{localPlayer.name}</div>
-                <div className="text-slate-500 text-xs mb-1">{localPlayer.captain.name}</div>
+                <div
+                  className="text-slate-500 text-xs mb-1 cursor-pointer hover:text-amber-400 transition-colors"
+                  onClick={() => setViewingCaptain(localPlayer.captain)}
+                >{localPlayer.captain.name}</div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <span className="text-amber-400">★</span>
@@ -2010,7 +2398,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           {otherPlayers.length > 0 && (
             <div className="flex-none p-3 border-t border-amber-900/20">
               <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Opponents</h3>
-              <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} />
+              <OpponentBar opponents={otherPlayers} allPlayers={players} layout="vertical" onViewPlayer={setViewingOpponent} onViewCaptain={setViewingCaptain} />
             </div>
           )}
           </div>{/* end sidebar scale wrapper */}
@@ -2030,6 +2418,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* Power choice modal */}
       {pendingPowerChoice && <PowerChoiceModal />}
+      <PowerAllocationPendingModal />
 
       {/* Hazard reveal modal */}
       <HazardRevealModal />
@@ -2055,8 +2444,26 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
       {/* UI Scale Settings Panel */}
       <ScaleSettingsPanel />
 
-      {/* Game Log Panel */}
-      <GameLogPanel isOpen={showLog} onClose={toggleLog} />
+      {/* Turn timer reminder */}
+      {turnElapsed >= TURN_TIMER_THRESHOLD && !isGameOver && !currentPlayer?.isAI && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 animate-pulse">
+          <div className="bg-slate-900/90 border border-amber-900/40 rounded-lg px-4 py-2 shadow-lg backdrop-blur-sm text-center">
+            {isMyTurn ? (
+              <span className="text-amber-400 text-sm font-semibold">
+                Still your turn ({Math.floor(turnElapsed / 60)}:{(turnElapsed % 60).toString().padStart(2, '0')})
+              </span>
+            ) : (
+              <span className="text-slate-400 text-sm">
+                Waiting for <span className="text-amber-400 font-semibold">{currentPlayer?.name}</span>
+                {' '}({Math.floor(turnElapsed / 60)}:{(turnElapsed % 60).toString().padStart(2, '0')})
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Game Log Panel - always visible in bottom-right */}
+      <GameLogPanel />
 
       {/* Opponent Tableau Viewer */}
       {viewingOpponent && (
@@ -2082,6 +2489,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
       {/* Animation overlay (ghost cards, floating numbers) */}
       <AnimationOverlay />
     </div>
+    </GameBoardContext.Provider>
   );
 }
 

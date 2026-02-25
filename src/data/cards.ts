@@ -561,7 +561,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: 'System abilities cost +1⚡',
     clearCondition: 'Discard 2 cards',
     clearCost: { discard: 2 },
-    copies: 3,
+    copies: 4,
   },
   {
     id: 'thruster-jam',
@@ -570,7 +570,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: "Can't move more than 1 space",
     clearCondition: 'Spend all Engines ⚡ (min 2)',
     clearCost: { spendAll: 'engines', min: 2 },
-    copies: 3,
+    copies: 4,
   },
   {
     id: 'corrupted-nav-chip',
@@ -579,7 +579,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: "Can't complete missions",
     clearCondition: '2⚡ from Computers',
     clearCost: { power: { computers: 2 } },
-    copies: 3,
+    copies: 4,
   },
   {
     id: 'warrant-issued',
@@ -588,7 +588,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: 'Missions cost +2 Credits',
     clearCondition: '2 Credits + 1⚡ Logistics',
     clearCost: { credits: 2, power: { logistics: 1 } },
-    copies: 3,
+    copies: 4,
   },
   {
     id: 'static-overload',
@@ -597,7 +597,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: 'Lose 1⚡ from a system',
     clearCondition: '2⚡ from Computers',
     clearCost: { power: { computers: 2 } },
-    copies: 3,
+    copies: 4,
   },
   {
     id: 'rogue-ai-fragment',
@@ -607,7 +607,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     clearCondition: '1⚡ Computers + 1 Credit',
     clearCost: { power: { computers: 1 }, credits: 1 },
     passOnClear: true,
-    copies: 1,
+    copies: 4,
   },
   {
     id: 'smuggled-parasite',
@@ -618,7 +618,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     clearCost: { discard: 1, power: { logistics: 1 } },
     revealOnDraw: true,
     passOnClear: true,
-    copies: 1,
+    copies: 4,
   },
   {
     id: 'failsafe-lockdown',
@@ -627,7 +627,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: 'Max 2 cards this turn',
     clearCondition: '1⚡ from 2 different systems',
     clearCost: { powerFromDifferent: 2 },
-    copies: 1,
+    copies: 4,
   },
   {
     id: 'overloaded-circuits',
@@ -636,7 +636,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     effect: 'Max +2⚡ from cards this turn',
     clearCondition: '1⚡ from 2 different systems',
     clearCost: { powerFromDifferent: 2 },
-    copies: 1,
+    copies: 4,
   },
   {
     id: 'corrosive-spores',
@@ -646,7 +646,7 @@ export const HAZARD_CARDS: HazardCard[] = [
     clearCondition: '2⚡ Logistics',
     clearCost: { power: { logistics: 2 } },
     passOnClear: true,
-    copies: 1,
+    copies: 4,
   },
 ];
 

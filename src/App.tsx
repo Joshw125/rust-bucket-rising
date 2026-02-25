@@ -128,11 +128,9 @@ function App() {
   const initGame = useGameStore((s) => s.initGame);
   const applyRemoteAction = useGameStore((s) => s.applyRemoteAction);
   const loadSnapshot = useGameStore((s) => s.loadSnapshot);
-  const computeStateHash = useGameStore((s) => s.computeStateHash);
   const gameState = useGameStore((s) => s.gameState);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
   const sendStateSnapshot = useMultiplayer((s) => s.sendStateSnapshot);
-  const requestResync = useMultiplayer((s) => s.requestResync);
   const playerId = useMultiplayer((s) => s.playerId);
   const room = useMultiplayer((s) => s.room);
 
@@ -141,9 +139,8 @@ function App() {
   const isHostRef = useRef(isHost);
   isHostRef.current = isHost;
 
-  // Track desync count to avoid spamming resync requests
+  // Track desync count for snapshot loading
   const desyncCountRef = useRef(0);
-  const lastResyncRef = useRef(0);
 
   const handleStartGame = (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => {
     setIsOnlineGame(false);
@@ -191,50 +188,36 @@ function App() {
     }
   };
 
+  // Helper: host sends a snapshot of its current state to all clients
+  const sendHostSnapshot = useCallback(() => {
+    if (!isHostRef.current) return;
+    // Small delay to ensure state is fully settled after dispatch
+    setTimeout(() => {
+      const finalState = useGameStore.getState().gameState;
+      const finalHash = useGameStore.getState().computeStateHash();
+      if (finalState) {
+        useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
+      }
+    }, 50);
+  }, []);
+
   // Handle game actions received from other players
-  const handleRemoteGameAction = useCallback((action: GameAction, fromPlayerIndex: number, remoteStateHash?: string) => {
+  const handleRemoteGameAction = useCallback((action: GameAction, fromPlayerIndex: number, _remoteStateHash?: string) => {
     // Only apply actions from other players (we already applied our own locally)
     if (fromPlayerIndex !== localPlayerIndex) {
       applyRemoteAction(action);
 
-      // HOST DUTY: After any player's END_TURN, send a snapshot to keep everyone in sync.
+      // HOST DUTY: After ANY remote action, send a snapshot to keep everyone in sync.
       // This is critical because each client shuffles independently (Math.random()),
-      // so without a snapshot after every turn, states will diverge.
-      if (isHostRef.current && action.type === 'END_TURN') {
-        setTimeout(() => {
-          const finalState = useGameStore.getState().gameState;
-          const finalHash = useGameStore.getState().computeStateHash();
-          if (finalState) {
-            useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-          }
-        }, 100);
-      }
-
-      // After applying, check state hash if provided
-      if (remoteStateHash) {
-        const localHash = computeStateHash();
-        if (localHash && localHash !== remoteStateHash) {
-          desyncCountRef.current++;
-          console.warn(`State desync detected! Local: ${localHash}, Remote: ${remoteStateHash} (count: ${desyncCountRef.current})`);
-
-          // Request resync after 2 consecutive desyncs, but not more than once per 10s
-          if (desyncCountRef.current >= 2 && Date.now() - lastResyncRef.current > 10000) {
-            console.log('Requesting resync from host...');
-            requestResync();
-            lastResyncRef.current = Date.now();
-            desyncCountRef.current = 0;
-          }
-        } else {
-          // Hashes match, reset counter
-          desyncCountRef.current = 0;
-        }
+      // so without frequent snapshots, states will diverge on any random operation.
+      if (isHostRef.current) {
+        sendHostSnapshot();
       }
     }
-  }, [localPlayerIndex, applyRemoteAction, computeStateHash, requestResync]);
+  }, [localPlayerIndex, applyRemoteAction, sendHostSnapshot]);
 
   // Handle receiving a state snapshot (for resync or rejoin)
   const handleStateSnapshot = useCallback((snapshot: unknown, _stateHash: string) => {
-    console.log('Received state snapshot, loading...');
     loadSnapshot(snapshot as GameState);
     desyncCountRef.current = 0;
   }, [loadSnapshot]);
@@ -262,31 +245,23 @@ function App() {
     }
   }, [isOnlineGame, handleRemoteGameAction, handleStateSnapshot, handleResyncRequested, setGameCallbacks]);
 
-  // Host: send state snapshot + hash with every action (for sync verification)
-  // Also send full snapshot after END_TURN for resync ability
+  // Host: send state snapshot after EVERY action (for reliable sync)
   useEffect(() => {
     if (!isOnlineGame || !isHost) return;
 
     const gameStore = useGameStore.getState();
-    // Set callback to include state hash with each action
     gameStore.setOnActionDispatched((action: GameAction) => {
       const hash = useGameStore.getState().computeStateHash();
       useMultiplayer.getState().sendGameAction(action, hash);
 
-      // After END_TURN, send full snapshot so server stores it
-      if (action.type === 'END_TURN') {
-        const state = useGameStore.getState().gameState;
-        if (state) {
-          // Small delay to ensure state is fully settled
-          setTimeout(() => {
-            const finalState = useGameStore.getState().gameState;
-            const finalHash = useGameStore.getState().computeStateHash();
-            if (finalState) {
-              useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-            }
-          }, 100);
+      // Send full snapshot after EVERY action so clients always converge
+      setTimeout(() => {
+        const finalState = useGameStore.getState().gameState;
+        const finalHash = useGameStore.getState().computeStateHash();
+        if (finalState) {
+          useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
         }
-      }
+      }, 50);
 
       // Check for game over
       const currentGameState = useGameStore.getState().gameState;

@@ -18,6 +18,7 @@ export interface OpponentBarProps {
   allPlayers?: Player[];  // Full player list for color index lookup
   layout?: 'horizontal' | 'vertical';
   onViewPlayer?: (player: Player) => void;
+  onViewCaptain?: (captain: Player['captain']) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,7 +139,7 @@ function OpponentMini({ player, playerIndex, expanded, onToggle }: OpponentMiniP
 // Main Opponent Bar Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function OpponentBar({ opponents, allPlayers, layout = 'horizontal', onViewPlayer }: OpponentBarProps) {
+export function OpponentBar({ opponents, allPlayers, layout = 'horizontal', onViewPlayer, onViewCaptain }: OpponentBarProps) {
   // Helper to get player index for color lookup
   const getPlayerIndex = (opponent: Player): number => {
     if (allPlayers) return allPlayers.findIndex(p => p.id === opponent.id);
@@ -174,12 +175,23 @@ export function OpponentBar({ opponents, allPlayers, layout = 'horizontal', onVi
                 <img
                   src={captainImg}
                   alt={opponent.captain.name}
-                  className={clsx('w-8 h-8 rounded object-cover border', `border-${pColor.hex === '#a855f7' ? 'purple' : pColor.hex === '#fb923c' ? 'orange' : pColor.hex === '#67e8f9' ? 'cyan' : 'pink'}-500/50`)}
+                  className={clsx('w-8 h-8 rounded object-cover border cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all', `border-${pColor.hex === '#a855f7' ? 'purple' : pColor.hex === '#fb923c' ? 'orange' : pColor.hex === '#67e8f9' ? 'cyan' : 'pink'}-500/50`)}
                   style={{ borderColor: pColor.hex + '80' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewCaptain?.(opponent.captain);
+                  }}
+                  title={`View ${opponent.captain.name}'s ability`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className={clsx('text-sm font-semibold truncate', pColor.text)}>{opponent.name}</div>
-                  <div className="text-slate-500 text-xs">{opponent.captain.name}</div>
+                  <div
+                    className="text-slate-500 text-xs cursor-pointer hover:text-amber-400 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewCaptain?.(opponent.captain);
+                    }}
+                  >{opponent.captain.name}</div>
                 </div>
                 <div className="text-amber-400 font-bold text-sm">★{opponent.fame}</div>
               </div>

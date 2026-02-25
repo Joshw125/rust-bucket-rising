@@ -323,6 +323,7 @@ export function setupHazardDeck(): CardInstance[] {
 export class GameEngine {
   private state: GameState;
   private stats: GameStatsTracker | null = null;
+  private _pendingInstallPowerChoices: Array<{ cardTitle: string; powerAmount: number }> | null = null;
 
   constructor(players: Array<{ name: string; captain: Captain; isAI?: boolean }>) {
     resetInstanceIdCounter();
@@ -645,7 +646,32 @@ export class GameEngine {
     this.state.phase = 'initial';
 
     // 1. Resolve start-of-turn card effects FIRST (installations give power)
+    this._pendingInstallPowerChoices = [];
     this.applyInstallationEffects(player);
+
+    // If any installations need player power allocation, prompt for the first one
+    // (applyInstallationEffects may have populated _pendingInstallPowerChoices)
+    if (this._pendingInstallPowerChoices.length > 0) {
+      const first = this._pendingInstallPowerChoices.shift()!;
+      this.state.pendingAction = {
+        type: 'powerAllocation',
+        playerId: player.id,
+        data: {
+          powerAmount: first.powerAmount,
+          cardTitle: first.cardTitle,
+          fromInstallPhase: true,
+        },
+      };
+      return; // Wait for player to allocate, then continueInitialPhase
+    }
+
+    // No pending power choices, continue normally
+    this.continueInitialPhase();
+  }
+
+  // Continue the initial phase after all installation power choices are resolved
+  private continueInitialPhase(): void {
+    const player = this.getCurrentPlayer();
 
     // 2. Apply captain turn-start abilities
     if (player.captain.ability.turnStart === 'credit') {
@@ -792,11 +818,17 @@ export class GameEngine {
         }
       }
 
-      // Power choice (player will need to allocate)
+      // Power choice (queue for player allocation)
       if (data.powerChoice) {
-        // For now, apply to the same system as the installation
-        player.currentPower[system] = Math.min(MAX_POWER, player.currentPower[system] + data.powerChoice);
-        effects.push(`+${data.powerChoice}⚡ ${system}`);
+        // Queue this for the player to allocate - collected after method returns
+        if (!this._pendingInstallPowerChoices) {
+          this._pendingInstallPowerChoices = [];
+        }
+        this._pendingInstallPowerChoices.push({
+          cardTitle: card.title,
+          powerAmount: data.powerChoice,
+        });
+        effects.push(`+${data.powerChoice}⚡ (choose)`);
       }
 
       // Movement
@@ -1427,7 +1459,31 @@ export class GameEngine {
   clearHazard(player: Player, hazardInstanceId: string, discardCardIds?: string[]): boolean {
     if (!this.canClearHazard(player, hazardInstanceId)) return false;
 
+    const hazard = player.hand.find(c => c.instanceId === hazardInstanceId)!;
+    const hazardCard = hazard as HazardCard & { instanceId: string };
+    const cost = hazardCard.clearCost;
+
+    // If powerFromDifferent is needed, prompt the player to choose systems
+    if (cost.powerFromDifferent) {
+      this.state.pendingAction = {
+        type: 'hazardClearPower',
+        playerId: player.id,
+        data: {
+          cardTitle: hazard.title,
+          card: hazard,
+          powerAmount: cost.powerFromDifferent,
+        },
+      };
+      return true; // Wait for player to choose systems
+    }
+
+    // Complete the clear immediately for other cost types
+    return this.completeClearHazard(player, hazardInstanceId, discardCardIds);
+  }
+
+  private completeClearHazard(player: Player, hazardInstanceId: string, discardCardIds?: string[]): boolean {
     const hazardIndex = player.hand.findIndex(c => c.instanceId === hazardInstanceId);
+    if (hazardIndex < 0) return false;
     const [hazard] = player.hand.splice(hazardIndex, 1);
     const hazardCard = hazard as HazardCard & { instanceId: string };
     const cost = hazardCard.clearCost;
@@ -1452,19 +1508,6 @@ export class GameEngine {
       for (const cardId of discardCardIds.slice(0, cost.discard)) {
         this.discardCard(player, cardId);
       }
-    }
-
-    if (cost.powerFromDifferent) {
-      // This needs UI selection - for now just spend from first N systems
-      let remaining = cost.powerFromDifferent;
-      for (const system of SYSTEMS) {
-        if (remaining <= 0) break;
-        if (player.currentPower[system] >= 1) {
-          player.currentPower[system] -= 1;
-          remaining--;
-        }
-      }
-      this.stats?.onPowerSpent(player.id, cost.powerFromDifferent - remaining);
     }
 
     player.hazardsInDeck--;
@@ -2017,6 +2060,7 @@ export class GameEngine {
         break;
 
       case 'draw1':
+        this.state.hasRevealedInfo = true;
         this.drawCards(player, 1);
         break;
 
@@ -2113,7 +2157,7 @@ export class GameEngine {
   }
 
   // Apply install bonuses immediately when installing (not just at turn start)
-  private applyImmediateInstallBonus(player: Player, card: ActionCard, targetSystem: SystemType): void {
+  private applyImmediateInstallBonus(player: Player, card: ActionCard, _targetSystem: SystemType): void {
     if (!card.installData) return;
 
     const data = card.installData;
@@ -2129,10 +2173,17 @@ export class GameEngine {
       }
     }
 
-    // Power choice - apply to the same system as the installation
+    // Power choice - let player choose where to allocate
     if (data.powerChoice) {
-      player.currentPower[targetSystem] = Math.min(MAX_POWER, player.currentPower[targetSystem] + data.powerChoice);
-      effects.push(`+${data.powerChoice}⚡ ${targetSystem}`);
+      this.state.pendingAction = {
+        type: 'powerAllocation',
+        playerId: player.id,
+        data: {
+          powerAmount: data.powerChoice,
+          cardTitle: card.title,
+        },
+      };
+      effects.push(`+${data.powerChoice}⚡ (choose)`);
     }
 
     // Movement
@@ -2369,10 +2420,64 @@ export class GameEngine {
         }
         break;
 
-      case 'powerAllocation':
+      case 'powerAllocation': {
         const allocation = choice as PowerAllocation;
         this.addPower(player, allocation);
+
+        // Check if there are more install power choices queued
+        if (this._pendingInstallPowerChoices && this._pendingInstallPowerChoices.length > 0) {
+          const next = this._pendingInstallPowerChoices.shift()!;
+          this.state.pendingAction = {
+            type: 'powerAllocation',
+            playerId: player.id,
+            data: {
+              powerAmount: next.powerAmount,
+              cardTitle: next.cardTitle,
+              fromInstallPhase: true,
+            },
+          };
+          return true; // Don't clear pending - chained into next power choice
+        }
+
+        // If this was from the install phase, continue with captain abilities/hazards
+        if (pending.data?.fromInstallPhase) {
+          this._pendingInstallPowerChoices = null;
+          this.state.pendingAction = null;
+          this.continueInitialPhase();
+          return true;
+        }
         break;
+      }
+
+      case 'hazardClearPower': {
+        // Player chose which systems to spend 1 power each from to clear a hazard
+        const hcAllocation = choice as PowerAllocation;
+        const requiredCount = pending.data?.powerAmount ?? 0;
+
+        // Validate: exactly requiredCount systems with exactly 1 power each
+        let systemsUsed = 0;
+        for (const sys of SYSTEMS) {
+          if (hcAllocation[sys] === 1) systemsUsed++;
+        }
+        if (systemsUsed !== requiredCount) return false;
+
+        // Spend the power
+        for (const sys of SYSTEMS) {
+          if (hcAllocation[sys] === 1) {
+            player.currentPower[sys] -= 1;
+          }
+        }
+        this.stats?.onPowerSpent(player.id, requiredCount);
+
+        // Now complete the hazard clear
+        const hazardId = pending.data?.card?.instanceId;
+        if (hazardId) {
+          this.state.pendingAction = null;
+          this.completeClearHazard(player, hazardId);
+          return true;
+        }
+        break;
+      }
 
       case 'missionReward':
         // Choice is the system to apply power/gear to
