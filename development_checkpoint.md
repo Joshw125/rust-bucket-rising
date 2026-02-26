@@ -1,6 +1,6 @@
 # Rust Bucket Rising - Development Checkpoint
 
-**Last Updated:** February 13, 2026 — All card effects fixed, balanced, deployed to Render
+**Last Updated:** February 25, 2026 — Multiplayer sync overhaul, hazard/install mechanic fixes, UI improvements
 
 ---
 
@@ -67,22 +67,44 @@
 - **Near Space missions**: all 14 bumped from 3 total power to 4 total power requirement
 - **Tiebreaker**: Fame → Missions → Fewest hazards → Credits (was: just Fame, player 1 wins ties)
 
-### Multiplayer (working)
+### Multiplayer (working — overhauled Feb 25, 2026)
 - WebSocket server with room-based matchmaking (4-char join codes)
+- Supports multiple simultaneous games (each room is fully isolated)
 - HTTP health check endpoint at /health
 - Client connects via VITE_WS_URL env variable
 - OnlineLobby component for creating/joining rooms
+- **Host-authoritative sync**: host sends full state snapshot after every action (not just END_TURN)
+- **Modal gating**: `GameBoardContext` + `useShouldShowPendingAction()` hook ensures all 9 modal types only display for the intended player in online mode
+- **Reconnection**: automatic resync via host snapshot on reconnect
 
-### UI Components (14+)
-- GameBoard (main screen + Draw3Keep1Modal + MoveOtherPlayerModal)
+### Hazard System (updated Feb 25, 2026)
+- **40 hazard cards** total (4 copies x 10 types, increased from ~20)
+- Hazards can be trashed via Logistics ability (removed `c.type !== 'hazard'` filter from trash modal)
+- `powerFromDifferent` clearing now prompts player with system picker modal (`hazardClearPower` pending action) instead of auto-selecting
+
+### Installation System (updated Feb 25, 2026)
+- **Installation powerChoice**: prompts player to allocate power instead of auto-assigning
+- Turn-start installs: queued via `_pendingInstallPowerChoices`, resolved sequentially before captain abilities/hazards via `continueInitialPhase()`
+- Mid-turn installs: sets `powerAllocation` pending action immediately
+- New `PowerAllocationPendingModal` in GameBoard.tsx handles both cases
+
+### Undo System (updated Feb 25, 2026)
+- `hasRevealedInfo = true` now set before draw1 (Computers ability), blocking undo after seeing drawn card
+
+### UI Components (16+)
+- GameBoard (main screen + 9 modals: HazardReveal, TrashCard, MissionReward, MissionRewardChoice, TargetPlayer, Draw3Keep1, MoveOtherPlayer, PowerAllocationPending, HazardClearPower)
+- CaptainViewerModal (click any captain portrait/name to view ability)
 - GameSetup, HandDisplay, Card, PlayerBoard, PlayerTableau
-- SpaceTrack, MarketDisplay, PyramidMarket, PlayerStatsBar, OpponentBar
+- SpaceTrack (zone labels as zero-width flex children for even spacing)
+- MarketDisplay, PyramidMarket, PlayerStatsBar, OpponentBar (clickable captain images)
+- GameLogPanel (always-visible floating panel in bottom-right, minimizable)
+- Turn timer banner (appears after 60s, shows elapsed time)
 - SimulationMode, OnlineLobby, App (menu routing)
 
 ### AI System
 - 5 strategies: balanced, aggressive, economic, explorer, rush
 - Scoring-based decision making for all action types
-- Handles pending actions: hazard targets, draw-3-keep-1, trash selection, power allocation
+- Handles pending actions: hazard targets, draw-3-keep-1, trash selection, power allocation, hazard clear power choice
 
 ---
 
@@ -104,12 +126,17 @@ GameEngine.ts: dispatch(state, action) → mutated state
 - `PendingAction.data.deferredEffects` — effects applied after mandatory trash
 - `PendingAction.data.bonusIfHadHazard` — bonus for giving hazard to hazard-holding player
 - `PendingAction.data.moveOther` — chain move after giving hazard
+- `PendingAction.data.fromInstallPhase` — power allocation is from turn-start installation effects
 - `PendingAction.type: 'moveOtherPlayer'` — move another player's ship
+- `PendingAction.type: 'hazardClearPower'` — choose systems to spend power from for hazard clearing
+- `PendingAction.type: 'powerAllocation'` — allocate power to systems (from installs, deferred effects)
 
 ### Server Architecture
 - `server/src/index.ts`: HTTP server wrapping WebSocketServer
 - Health check: GET /health returns JSON status
 - Room-based: clients send JOIN_ROOM/CREATE_ROOM, server manages game state sync
+- Multiple simultaneous games supported (rooms stored in `Map<string, Room>`, fully isolated)
+- All broadcasts scoped to room via `client.roomId`
 - Render config: `server/render.yaml` (blueprint) + env vars PORT=10000, NODE_ENV=production
 
 ### Environment
@@ -125,11 +152,9 @@ GameEngine.ts: dispatch(state, action) → mutated state
 - **Synced Loop card**: "play extra card" is meaningless since card plays are unlimited. Could be redesigned.
 - **Replaced missions**: always revealed when swapped in, reduces exploration element for mid/deep space.
 - **Server-side validation**: server trusts client state, no server-side game logic validation.
-- **Reconnection**: no reconnect handling if WebSocket drops mid-game.
 
 ### Future Enhancements
 - Server-side game state validation
-- Reconnection support for dropped WebSocket connections
 - More sophisticated AI (MCTS or RL self-play)
 - Sound effects and animations
 - Custom game settings (victory threshold, starting location, etc.)
@@ -160,7 +185,7 @@ GameEngine.ts: dispatch(state, action) → mutated state
 ## Game Rules Quick Reference
 
 ### Turn Structure
-1. **Initial Phase**: Reveal hazards, apply installations, captain start abilities
+1. **Initial Phase**: Apply installations (player allocates powerChoice if any) → captain start abilities → reveal hazards
 2. **Action Phase**: Play cards, activate systems, move, missions, buy, install (any order/count)
 3. **Cleanup Phase**: Discard all, draw 5, check victory (25 Fame triggers final round)
 

@@ -1,6 +1,9 @@
 # Rust Bucket Rising - Suggested Fixes & Balance Changes
 
 **Compiled from analysis session — February 2026**
+**Last reviewed: February 25, 2026**
+
+> Items marked with ~~strikethrough~~ have been fixed. See `development_checkpoint.md` for current state.
 
 ---
 
@@ -203,11 +206,9 @@ These cards have fundamental design problems beyond just missing implementation.
 - Lines 853-856: Empty if-block, never prevents movement.
 - **Fix**: Track `spacesMovedThisTurn` on the player. In `move()`, reject if >= 1 and hazard is active. (Note: this should count all moves, not just engine-powered ones.)
 
-### Hazard Deck Exhaustion
-- Only 21 hazard cards total (sum of all copies across 11 types).
-- In a 4-player aggressive game, deck could empty quickly.
-- Weapons system abilities become useless when hazard deck is empty.
-- **Suggestion**: Consider recycling cleared hazards back into the hazard deck (shuffle them back in). Or increase copies of common hazards.
+### ~~Hazard Deck Exhaustion~~ (FIXED Feb 25, 2026)
+- ~~Only 21 hazard cards total (sum of all copies across 11 types).~~
+- **Fixed**: All 10 hazard types now have 4 copies each = 40 total hazard cards.
 
 ---
 
@@ -264,30 +265,43 @@ These cards have fundamental design problems beyond just missing implementation.
 
 ## Priority Order for Fixes
 
-### Phase 1: Make Existing Cards Work
-1. Implement `hazardAllAtLocation` and `hazardAll` (affects Pulse Grenade, Chain Reaction, Detonator Relay)
-2. Implement `bonusIfHadHazard` check (affects Scrap Shot)
-3. Implement `fameIfHazards` check (affects Scorch Protocol)
-4. Implement `mustTrash` as mandatory (affects Cargo Jettison)
-5. Implement `oneTimeUse` tracking (affects Temporal Jump, Detonator Relay)
-6. Fix Warrant Issued, Overloaded Circuits, Thruster Jam hazards
+### Phase 1: Make Existing Cards Work — ALL DONE (fixed Feb 2026)
+1. ~~Implement `hazardAllAtLocation` and `hazardAll`~~ DONE
+2. ~~Implement `bonusIfHadHazard` check~~ DONE
+3. ~~Implement `fameIfHazards` check~~ DONE
+4. ~~Implement `mustTrash` as mandatory~~ DONE
+5. ~~Implement `oneTimeUse` tracking~~ DONE
+6. ~~Fix Warrant Issued, Overloaded Circuits, Thruster Jam hazards~~ DONE
 
-### Phase 2: Fix Core Balance
-7. Fix `playerHasActiveHazard` to only check hand (not deck/discard)
-8. Add tiebreaker logic to `endGame()`
-9. Fix Broker captain ability in engine
-10. Address Near Space snowball (choose one option from Section 5)
+### Phase 2: Fix Core Balance — ALL DONE (fixed Feb 2026)
+7. ~~Fix `playerHasActiveHazard` to only check hand~~ DONE
+8. ~~Add tiebreaker logic to `endGame()`~~ DONE
+9. ~~Fix Broker captain ability in engine~~ DONE
+10. ~~Address Near Space snowball~~ DONE (missions bumped to 4 total power)
 
-### Phase 3: Redesign Broken Cards
+### Phase 3: Redesign Broken Cards — REMAINING
 11. Redesign Synced Loop (both play and install effects)
 12. Add credits to Refit Contract play effect
-13. Simplify Thruster Array to `powerChoice: 2`
-14. Simplify Remote Uplink install to `powerChoice: 1`
-15. Simplify or redesign Interceptor Mode conditional
+13. ~~Simplify Thruster Array to `powerChoice: 2`~~ DONE
+14. ~~Simplify Remote Uplink install to `powerChoice: 1`~~ DONE
+15. ~~Simplify or redesign Interceptor Mode conditional~~ DONE
 
-### Phase 4: Implement Complex Missing Features
-16. Implement trophy passive trigger system
-17. Implement Echo Engine play-from-discard
-18. Implement Temporal Jump extra turn
-19. Implement Mag-Leash move-other with target selection
-20. Replace Countermeasures with Salvage Run (or implement reactions)
+### Phase 4: Implement Complex Missing Features — ALL DONE (fixed Feb 2026)
+16. ~~Implement trophy passive trigger system~~ DONE
+17. ~~Implement Echo Engine play-from-discard~~ DONE
+18. ~~Implement Temporal Jump extra turn~~ DONE
+19. ~~Implement Mag-Leash move-other with target selection~~ DONE
+20. ~~Replace Countermeasures with Salvage Run (or implement reactions)~~ DONE (reactions implemented)
+
+### Additional Fixes (Feb 25, 2026 — from playtesting)
+- ~~Multiplayer state desync (scores/installs wrong for non-host)~~ FIXED — host sends snapshot after every action
+- ~~Modals appearing for wrong player in online mode~~ FIXED — modal gating via GameBoardContext
+- ~~Hazard deck exhaustion~~ FIXED — increased to 40 cards
+- ~~Hazard clearing auto-picks power sources~~ FIXED — new `hazardClearPower` pending action with UI
+- ~~Installation powerChoice auto-assigns~~ FIXED — new `powerAllocation` pending action with UI
+- ~~Can't trash hazards~~ FIXED — removed hazard filter from trash modal
+- ~~Undo allowed after Computer draw1~~ FIXED — `hasRevealedInfo = true` before draw
+- ~~Mission cards unevenly spaced~~ FIXED — zone labels as zero-width flex children
+- Added: captain viewer modal (clickable portraits)
+- Added: always-visible game log (floating bottom-right panel)
+- Added: turn timer reminder (60 second threshold)

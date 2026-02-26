@@ -46,7 +46,7 @@ rust-bucket-rising/
 ├── src/
 │   ├── types/index.ts              # All game types
 │   ├── engine/
-│   │   ├── GameEngine.ts           # Core game logic (~2100 lines)
+│   │   ├── GameEngine.ts           # Core game logic (~2500 lines)
 │   │   ├── GameEngine.test.ts      # 70 tests
 │   │   ├── AIEngine.ts             # AI decision-making
 │   │   └── SimulationRunner.ts     # Batch balance testing
