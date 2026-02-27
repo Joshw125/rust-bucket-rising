@@ -173,11 +173,16 @@ function App() {
       handleResyncRequested,
     );
 
-    // Each client creates its own GameEngine with independent random shuffles,
-    // so states will differ. The host is the source of truth:
-    // - Host sends its initial state snapshot to the server and all clients
-    // - Non-host clients will receive the snapshot and load it via handleStateSnapshot
-    if (isHostRef.current) {
+    // Check for a pending snapshot (rejoin scenario).
+    // On rejoin, the server sends a snapshot before the game engine exists.
+    // It gets buffered in pendingSnapshot. Load it now to avoid showing the wrong state.
+    const pendingSnapshot = useMultiplayer.getState().pendingSnapshot;
+    if (pendingSnapshot) {
+      // Load the host's snapshot immediately (overrides the fresh initGame state)
+      loadSnapshot(pendingSnapshot.snapshot as GameState, myIndex);
+      useMultiplayer.setState({ pendingSnapshot: null });
+    } else if (isHostRef.current) {
+      // Normal start: host sends initial snapshot so all clients converge
       setTimeout(() => {
         const state = useGameStore.getState().gameState;
         const hash = useGameStore.getState().computeStateHash();
@@ -191,14 +196,12 @@ function App() {
   // Helper: host sends a snapshot of its current state to all clients
   const sendHostSnapshot = useCallback(() => {
     if (!isHostRef.current) return;
-    // Small delay to ensure state is fully settled after dispatch
-    setTimeout(() => {
-      const finalState = useGameStore.getState().gameState;
-      const finalHash = useGameStore.getState().computeStateHash();
-      if (finalState) {
-        useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-      }
-    }, 50);
+    // Send synchronously — engine dispatch is synchronous so state is already settled
+    const finalState = useGameStore.getState().gameState;
+    const finalHash = useGameStore.getState().computeStateHash();
+    if (finalState) {
+      useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
+    }
   }, []);
 
   // Handle game actions received from other players
@@ -218,9 +221,9 @@ function App() {
 
   // Handle receiving a state snapshot (for resync or rejoin)
   const handleStateSnapshot = useCallback((snapshot: unknown, _stateHash: string) => {
-    loadSnapshot(snapshot as GameState);
+    loadSnapshot(snapshot as GameState, localPlayerIndex ?? undefined);
     desyncCountRef.current = 0;
-  }, [loadSnapshot]);
+  }, [loadSnapshot, localPlayerIndex]);
 
   // Handle resync request (host sends their current state)
   const handleResyncRequested = useCallback(() => {
@@ -254,14 +257,13 @@ function App() {
       const hash = useGameStore.getState().computeStateHash();
       useMultiplayer.getState().sendGameAction(action, hash);
 
-      // Send full snapshot after EVERY action so clients always converge
-      setTimeout(() => {
-        const finalState = useGameStore.getState().gameState;
-        const finalHash = useGameStore.getState().computeStateHash();
-        if (finalState) {
-          useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-        }
-      }, 50);
+      // Send full snapshot synchronously after EVERY action so clients always converge
+      // (engine dispatch is synchronous, so state is already settled)
+      const finalState = useGameStore.getState().gameState;
+      const finalHash = useGameStore.getState().computeStateHash();
+      if (finalState) {
+        useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
+      }
 
       // Check for game over
       const currentGameState = useGameStore.getState().gameState;

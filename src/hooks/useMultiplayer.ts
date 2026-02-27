@@ -41,6 +41,9 @@ interface MultiplayerStore extends MultiplayerState {
   // Buffered snapshot for rejoin (arrives before game engine is created)
   pendingSnapshot: { snapshot: unknown; stateHash: string } | null;
 
+  // Rejoin player selection (when name doesn't match any disconnected player)
+  rejoinOptions: { roomCode: string; disconnectedPlayers: Array<{ name: string; captainId: string | null }> } | null;
+
   // Connection actions
   connect: () => void;
   disconnect: () => void;
@@ -60,6 +63,9 @@ interface MultiplayerStore extends MultiplayerState {
   sendStateSnapshot: (snapshot: GameState, stateHash: string) => void;
   requestResync: () => void;
   sendGameOver: (winnerId: number, winnerName: string, stats: unknown) => void;
+
+  // Rejoin
+  rejoinAs: (roomCode: string, playerName: string, targetPlayerName: string) => void;
 
   // Chat
   sendChat: (message: string) => void;
@@ -102,6 +108,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
   onStateSnapshot: null,
   onResyncRequested: null,
   pendingSnapshot: null,
+  rejoinOptions: null,
 
   // Reconnection state
   lastRoomCode: null,
@@ -218,11 +225,17 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
     get()._send({ type: 'JOIN_ROOM', roomCode, playerName });
   },
 
+  // Rejoin a running game as a specific disconnected player
+  rejoinAs: (roomCode: string, playerName: string, targetPlayerName: string) => {
+    set({ rejoinOptions: null, lastRoomCode: roomCode, lastPlayerName: targetPlayerName });
+    get()._send({ type: 'REJOIN_AS', roomCode, playerName, targetPlayerName });
+  },
+
   // Leave current room
   leaveRoom: () => {
     get()._send({ type: 'LEAVE_ROOM' });
     get()._stopReconnect();
-    set({ room: null, chatMessages: [], lastRoomCode: null, lastPlayerName: null, isRejoining: false, pendingSnapshot: null });
+    set({ room: null, chatMessages: [], lastRoomCode: null, lastPlayerName: null, isRejoining: false, pendingSnapshot: null, rejoinOptions: null });
   },
 
   // Select a captain
@@ -378,6 +391,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
           lastRoomCode: message.room.code,
           isRejoining: false,
           reconnectAttempt: 0,
+          rejoinOptions: null,
         });
         break;
 
@@ -470,6 +484,10 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
             },
           ].slice(-100), // Keep last 100 messages
         }));
+        break;
+
+      case 'REJOIN_OPTIONS':
+        set({ rejoinOptions: { roomCode: message.roomCode, disconnectedPlayers: message.disconnectedPlayers } });
         break;
 
       case 'PONG':

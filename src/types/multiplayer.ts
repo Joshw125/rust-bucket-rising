@@ -45,6 +45,7 @@ export type ClientMessage =
   | { type: 'REQUEST_RESYNC' }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string; stats: unknown }
   | { type: 'CHAT'; message: string }
+  | { type: 'REJOIN_AS'; roomCode: string; playerName: string; targetPlayerName: string }
   | { type: 'PING' };
 
 // -----------------------------------------------------------------------------
@@ -65,6 +66,7 @@ export type ServerMessage =
   | { type: 'RESYNC_REQUESTED'; playerId: string }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string }
   | { type: 'CHAT_MESSAGE'; playerId: string; playerName: string; message: string }
+  | { type: 'REJOIN_OPTIONS'; roomCode: string; disconnectedPlayers: Array<{ name: string; captainId: string | null }> }
   | { type: 'PONG' };
 
 // -----------------------------------------------------------------------------

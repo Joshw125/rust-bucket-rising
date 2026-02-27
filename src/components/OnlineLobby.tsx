@@ -239,6 +239,8 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
   const startGame = useMultiplayer((s) => s.startGame);
   const clearError = useMultiplayer((s) => s.clearError);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
+  const rejoinOptions = useMultiplayer((s) => s.rejoinOptions);
+  const rejoinAs = useMultiplayer((s) => s.rejoinAs);
 
   // Track whether game has already started (to distinguish normal start from rejoin)
   const hasGameStartedRef = useRef(false);
@@ -423,6 +425,47 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ─── Rejoin Player Selection ─── */}
+        {rejoinOptions && !room && (
+          <div className="bg-slate-950/60 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-6 shadow-2xl shadow-black/40">
+            <h2 className="text-lg font-bold text-amber-400 mb-2">Rejoin Game</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              A game is in progress in room <span className="text-amber-400 font-mono">{rejoinOptions.roomCode}</span>.
+              Select the player to rejoin as:
+            </p>
+            <div className="space-y-3">
+              {rejoinOptions.disconnectedPlayers.map((p) => {
+                const captain = CAPTAINS.find(c => c.id === p.captainId);
+                return (
+                  <button
+                    key={p.name}
+                    className="w-full p-4 rounded-lg font-semibold text-white bg-slate-800 hover:bg-slate-700 transition-all border-2 border-slate-600 hover:border-amber-500 text-left flex items-center gap-4"
+                    onClick={() => rejoinAs(rejoinOptions.roomCode, playerName, p.name)}
+                  >
+                    {captain && (
+                      <img
+                        src={`/cards/captain/${captain.image}`}
+                        alt={captain.name}
+                        className="w-12 h-16 rounded object-cover border border-slate-600"
+                      />
+                    )}
+                    <div>
+                      <div className="text-lg text-amber-400">{p.name}</div>
+                      {captain && <div className="text-xs text-slate-400">{captain.name}</div>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => useMultiplayer.setState({ rejoinOptions: null })}
+              className="mt-4 w-full py-2 rounded-lg font-semibold text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 transition-all text-sm"
+            >
+              Cancel
+            </button>
           </div>
         )}
 

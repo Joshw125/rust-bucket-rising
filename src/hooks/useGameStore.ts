@@ -41,6 +41,9 @@ export interface GameStore {
   onActionDispatched: ((action: GameAction) => void) | null;
   setOnActionDispatched: (callback: ((action: GameAction) => void) | null) => void;
 
+  // Snapshot race condition protection
+  lastLocalDispatchTime: number;
+
   // Actions
   initGame: (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => void;
   dispatch: (action: GameAction) => boolean;
@@ -76,7 +79,7 @@ export interface GameStore {
 
   // Multiplayer support
   applyRemoteAction: (action: GameAction) => boolean;
-  loadSnapshot: (snapshot: GameState) => void;
+  loadSnapshot: (snapshot: GameState, localPlayerId?: number) => void;
   computeStateHash: () => string;
 }
 
@@ -114,6 +117,7 @@ export const useGameStore = create<GameStore>()(
     isAIThinking: false,
     aiSpeed: 'normal' as const,
     onActionDispatched: null,
+    lastLocalDispatchTime: 0,
 
     // Set the callback for multiplayer action sync
     setOnActionDispatched: (callback) => {
@@ -164,6 +168,10 @@ export const useGameStore = create<GameStore>()(
       set((state) => {
         // Clone state so Immer doesn't freeze the engine's internal state
         state.gameState = cloneGameState(engine.getState());
+        // Track when local player dispatched (for snapshot race protection)
+        if (result) {
+          state.lastLocalDispatchTime = Date.now();
+        }
       });
 
       // Call multiplayer sync callback if set (for online games)
@@ -420,10 +428,35 @@ export const useGameStore = create<GameStore>()(
     },
 
     // Load a full game state snapshot (for rejoin / resync)
-    loadSnapshot: (snapshot) => {
-      const { engine } = get();
+    // localPlayerId: the in-game player ID of the local player (for pendingAction preservation)
+    loadSnapshot: (snapshot, localPlayerId) => {
+      const { engine, gameState, lastLocalDispatchTime } = get();
       if (!engine) return;
+
+      // Grace period: if the local player just dispatched an action, skip this snapshot.
+      // A corrected snapshot from the host (reflecting our action) will arrive shortly.
+      // This prevents stale snapshots from reverting local state changes (fame, power, pendingAction).
+      const timeSinceDispatch = Date.now() - lastLocalDispatchTime;
+      if (localPlayerId !== undefined && timeSinceDispatch < 200) {
+        console.log(`Skipping stale snapshot (local action ${timeSinceDispatch}ms ago)`);
+        return;
+      }
+
+      // Preserve local pendingAction if it belongs to the local player
+      // and the incoming snapshot doesn't have one (extra safeguard)
+      const currentPending = gameState?.pendingAction;
+      const shouldPreservePending =
+        currentPending &&
+        localPlayerId !== undefined &&
+        currentPending.playerId === localPlayerId &&
+        !(snapshot as GameState).pendingAction;
+
       engine.loadState(snapshot);
+
+      if (shouldPreservePending) {
+        engine.getState().pendingAction = currentPending;
+      }
+
       set((state) => {
         state.gameState = cloneGameState(engine.getState());
       });

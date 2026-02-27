@@ -2444,9 +2444,9 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
       {/* UI Scale Settings Panel */}
       <ScaleSettingsPanel />
 
-      {/* Turn timer reminder */}
+      {/* Turn timer reminder — positioned above the action bar to avoid overlapping undo */}
       {turnElapsed >= TURN_TIMER_THRESHOLD && !isGameOver && !currentPlayer?.isAI && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 animate-pulse">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-20 animate-pulse">
           <div className="bg-slate-900/90 border border-amber-900/40 rounded-lg px-4 py-2 shadow-lg backdrop-blur-sm text-center">
             {isMyTurn ? (
               <span className="text-amber-400 text-sm font-semibold">

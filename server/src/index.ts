@@ -295,7 +295,22 @@ function handleJoinRoom(ws: WebSocket, client: ConnectedClient, roomCode: string
       });
       return;
     }
-    send(ws, { type: 'ERROR', message: 'This game has already started.' });
+
+    // No name match — check if there are disconnected players to choose from
+    const disconnectedPlayers = room.players.filter(p => !p.isConnected);
+    if (disconnectedPlayers.length > 0) {
+      send(ws, {
+        type: 'REJOIN_OPTIONS',
+        roomCode: room.code,
+        disconnectedPlayers: disconnectedPlayers.map(p => ({
+          name: p.name,
+          captainId: p.captainId,
+        })),
+      });
+      return;
+    }
+
+    send(ws, { type: 'ERROR', message: 'This game has already started and all players are connected.' });
     return;
   }
 
@@ -342,20 +357,81 @@ function handleLeaveRoom(ws: WebSocket, client: ConnectedClient): void {
   if (!room) return;
 
   const player = room.players.find(p => p.id === client.playerId);
-  leaveRoom(room, client.playerId);
-  client.roomId = null;
 
-  if (rooms.has(room.id)) {
-    // Room still exists, notify others
-    broadcast(room, {
-      type: 'PLAYER_LEFT',
-      playerId: client.playerId,
-      newHostId: room.hostId
-    });
-    broadcast(room, { type: 'ROOM_UPDATE', room });
+  if (room.status === 'playing') {
+    // During a game, mark as disconnected but keep player in room
+    // (same behavior as connection drop — allows rejoin by name)
+    if (player) {
+      player.isConnected = false;
+      broadcast(room, { type: 'ROOM_UPDATE', room });
+    }
+    client.roomId = null;
+  } else {
+    // In lobby, fully remove player
+    leaveRoom(room, client.playerId);
+    client.roomId = null;
+
+    if (rooms.has(room.id)) {
+      broadcast(room, {
+        type: 'PLAYER_LEFT',
+        playerId: client.playerId,
+        newHostId: room.hostId
+      });
+      broadcast(room, { type: 'ROOM_UPDATE', room });
+    }
   }
 
   console.log(`${player?.name || 'Unknown'} left room ${room.code}`);
+}
+
+function handleRejoinAs(ws: WebSocket, client: ConnectedClient, roomCode: string, playerName: string, targetPlayerName: string): void {
+  const room = getRoomByCode(roomCode);
+  if (!room) {
+    send(ws, { type: 'ERROR', message: 'Room not found.' });
+    return;
+  }
+
+  if (room.status !== 'playing') {
+    send(ws, { type: 'ERROR', message: 'Game is not in progress.' });
+    return;
+  }
+
+  const targetPlayer = room.players.find(
+    p => !p.isConnected && p.name.toLowerCase() === targetPlayerName.toLowerCase()
+  );
+  if (!targetPlayer) {
+    send(ws, { type: 'ERROR', message: 'That player is no longer available to rejoin as.' });
+    return;
+  }
+
+  // Rejoin as the target player
+  targetPlayer.isConnected = true;
+  const oldPlayerId = client.playerId;
+  client.playerId = targetPlayer.id;
+  client.roomId = room.id;
+  playerToRoom.delete(oldPlayerId);
+  playerToRoom.set(targetPlayer.id, room.id);
+
+  send(ws, { type: 'ROOM_JOINED', room, playerId: targetPlayer.id });
+
+  if (room.gameState) {
+    send(ws, {
+      type: 'STATE_SNAPSHOT',
+      snapshot: room.gameState,
+      stateHash: room.stateHash || '',
+    });
+  }
+
+  broadcast(room, { type: 'ROOM_UPDATE', room }, targetPlayer.id);
+  console.log(`Player "${playerName}" rejoined room ${roomCode} as "${targetPlayerName}"`);
+
+  logAnalytics({
+    event: 'player_rejoin_as',
+    roomCode: room.code,
+    playerName,
+    targetPlayerName,
+    playerId: targetPlayer.id,
+  });
 }
 
 function handleSelectCaptain(ws: WebSocket, client: ConnectedClient, captainId: string): void {
@@ -619,6 +695,9 @@ function handleMessage(ws: WebSocket, client: ConnectedClient, data: string): vo
         break;
       case 'CHAT':
         handleChat(ws, client, message.message);
+        break;
+      case 'REJOIN_AS':
+        handleRejoinAs(ws, client, message.roomCode, message.playerName, message.targetPlayerName);
         break;
       case 'PING':
         send(ws, { type: 'PONG' });
