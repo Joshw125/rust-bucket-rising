@@ -139,7 +139,7 @@ export class AIEngine {
         return { type: 'RESOLVE_PENDING', choice: null };
 
       case 'targetPlayer':
-        // Choose a target for hazard
+        // Choose a target (hazard or interaction)
         return this.chooseHazardTarget(state, player);
 
       case 'draw3keep1':
@@ -171,6 +171,102 @@ export class AIEngine {
         // Choose the better reward option
         return this.chooseMissionReward(pending.data?.mission);
 
+      case 'moveOtherPlayer': {
+        // Move the leading opponent backward if possible
+        const moveTargetIds = pending.data?.targetPlayerIds ?? [];
+        const moveTargets = state.players.filter(p => moveTargetIds.includes(p.id));
+        if (moveTargets.length === 0) return { type: 'RESOLVE_PENDING', choice: { targetId: -1, direction: 1 } };
+        const target = moveTargets.reduce((best, p) => p.fame > best.fame ? p : best);
+        const dir = target.location > 1 ? -1 : 1;
+        return { type: 'RESOLVE_PENDING', choice: { targetId: target.id, direction: dir } };
+      }
+
+      // ── Interaction pending actions ──────────────────────────────────
+
+      case 'forceDiscard': {
+        // Discard lowest-value card(s) from hand
+        const amount = pending.data?.amount ?? 1;
+        const hand = player.hand.filter(c => c.type !== 'hazard');
+        if (hand.length === 0) return { type: 'RESOLVE_PENDING', choice: amount === 1 ? null : [] };
+        const sorted = [...hand].sort((a, b) => this.scoreCardValue(a, player) - this.scoreCardValue(b, player));
+        const toDiscard = sorted.slice(0, Math.min(amount, sorted.length));
+        if (amount === 1) return { type: 'RESOLVE_PENDING', choice: toDiscard[0].instanceId };
+        return { type: 'RESOLVE_PENDING', choice: toDiscard.map(c => c.instanceId) };
+      }
+
+      case 'chooseOpponentDiscard': {
+        // Pick opponent's best card (highest value)
+        const opponentHand = pending.data?.opponentHand ?? [];
+        if (opponentHand.length === 0) return { type: 'RESOLVE_PENDING', choice: null };
+        const best = opponentHand.reduce((b, c) =>
+          this.scoreCardValue(c, player) > this.scoreCardValue(b, player) ? c : b
+        );
+        return { type: 'RESOLVE_PENDING', choice: best.instanceId };
+      }
+
+      case 'choosePowerLoss': {
+        // Lose power from system with most power (least impactful)
+        const systems = (['weapons', 'computers', 'engines', 'logistics'] as const)
+          .filter(s => player.currentPower[s] > 0)
+          .sort((a, b) => player.currentPower[b] - player.currentPower[a]);
+        return { type: 'RESOLVE_PENDING', choice: systems[0] ?? 'weapons' };
+      }
+
+      case 'forceUninstall': {
+        // Return least valuable installation
+        const installed = (['weapons', 'computers', 'engines', 'logistics'] as const)
+          .filter(s => player.installations[s] !== null);
+        if (installed.length === 0) return { type: 'RESOLVE_PENDING', choice: 'weapons' };
+        // Pick the one with lowest-tier card
+        const worst = installed.reduce((w, s) => {
+          const wCard = player.installations[w] as any;
+          const sCard = player.installations[s] as any;
+          return (sCard?.tier ?? 0) < (wCard?.tier ?? 0) ? s : w;
+        });
+        return { type: 'RESOLVE_PENDING', choice: worst };
+      }
+
+      case 'interactionChoice': {
+        // Prefer uninstall if opponent has installations, otherwise discard
+        const tid = pending.data?.targetPlayerId;
+        const opponent = tid !== undefined ? state.players.find(p => p.id === tid) : undefined;
+        const hasInstalls = opponent && (['weapons', 'computers', 'engines', 'logistics'] as const).some(s => opponent.installations[s] !== null);
+        return { type: 'RESOLVE_PENDING', choice: hasInstalls ? 'uninstall' : 'discard' };
+      }
+
+      case 'chooseOpponentInstall': {
+        // Pick opponent's best (highest tier) installation
+        const opId = pending.data?.targetPlayerId;
+        const op = opId !== undefined ? state.players.find(p => p.id === opId) : undefined;
+        if (!op) return { type: 'RESOLVE_PENDING', choice: 'weapons' };
+        const opInstalled = (['weapons', 'computers', 'engines', 'logistics'] as const)
+          .filter(s => op.installations[s] !== null);
+        if (opInstalled.length === 0) return { type: 'RESOLVE_PENDING', choice: 'weapons' };
+        const bestSys = opInstalled.reduce((b, s) => {
+          const bCard = op.installations[b] as any;
+          const sCard = op.installations[s] as any;
+          return (sCard?.tier ?? 0) > (bCard?.tier ?? 0) ? s : b;
+        });
+        return { type: 'RESOLVE_PENDING', choice: bestSys };
+      }
+
+      case 'mayDiscardToDraw':
+        // AI: yes if we have starter cards or hazards in hand
+        return { type: 'RESOLVE_PENDING', choice: player.hand.some(c => c.type === 'starter') };
+
+      case 'maySwapHandDiscard':
+        // AI: usually skip (simpler)
+        return { type: 'RESOLVE_PENDING', choice: false };
+
+      case 'selectSwapDiscard':
+        // If somehow AI gets here, just pick first card
+        if (pending.data?.source === 'hand') {
+          const nonHazard = player.hand.filter(c => c.type !== 'hazard');
+          return { type: 'RESOLVE_PENDING', choice: nonHazard[0]?.instanceId ?? null };
+        } else {
+          return { type: 'RESOLVE_PENDING', choice: player.discard[0]?.instanceId ?? null };
+        }
+
       default:
         // Unknown pending action, try to resolve it
         return { type: 'RESOLVE_PENDING', choice: null };
@@ -178,14 +274,21 @@ export class AIEngine {
   }
 
   private chooseHazardTarget(state: GameState, player: Player): GameAction {
-    // Find the player with the highest fame (most threatening)
-    const opponents = state.players.filter(p => p.id !== player.id);
+    const pending = state.pendingAction;
 
-    // Check if this is location-restricted
-    const isLocationRestricted = state.pendingAction?.data?.source === 'giveHazardAtLocation';
-    const validTargets = isLocationRestricted
-      ? opponents.filter(p => p.location === player.location)
-      : opponents;
+    // If targetPlayerIds is specified, use those
+    const targetIds = pending?.data?.targetPlayerIds;
+    let validTargets: Player[];
+
+    if (targetIds && targetIds.length > 0) {
+      validTargets = state.players.filter(p => targetIds.includes(p.id));
+    } else {
+      const opponents = state.players.filter(p => p.id !== player.id);
+      const isLocationRestricted = pending?.data?.source === 'giveHazardAtLocation';
+      validTargets = isLocationRestricted
+        ? opponents.filter(p => p.location === player.location)
+        : opponents;
+    }
 
     if (validTargets.length === 0) {
       return { type: 'RESOLVE_PENDING', choice: -1 }; // Cancel

@@ -212,6 +212,7 @@ export function createPlayer(id: number, name: string, captain: Captain, isAI = 
 
     // Stats
     hazardsInDeck: 0,
+    hazardsGivenThisTurn: 0,
 
     // Turn tracking for reveals
     revealedStacksThisTurn: { 1: false, 3: false, 5: false },
@@ -324,6 +325,7 @@ export class GameEngine {
   private state: GameState;
   private stats: GameStatsTracker | null = null;
   private _pendingInstallPowerChoices: Array<{ cardTitle: string; powerAmount: number }> | null = null;
+  private _pendingInstallInteractions: Array<{ type: string; cardTitle: string; data?: Record<string, unknown> }> | null = null;
 
   constructor(players: Array<{ name: string; captain: Captain; isAI?: boolean }>) {
     resetInstanceIdCounter();
@@ -510,6 +512,10 @@ export class GameEngine {
 
     this.stats?.onCardTrashed(player.id);
     this.log(`${player.name} trashed ${card.title}`, 'action');
+
+    // Trophy passive: onTrash (Contraband Cleanup)
+    this.checkTrophyPassives(player, 'onTrash');
+
     return true;
   }
 
@@ -526,6 +532,7 @@ export class GameEngine {
     player.movesThisTurn = 0;
     player.powerGainedFromCardsThisTurn = 0;
     player.usedCaptainAbility = false;
+    player.hazardsGivenThisTurn = 0;
     player.buyDiscount = 0;
     player.installDiscount = 0;
     player.missionDiscount = 0;
@@ -647,6 +654,7 @@ export class GameEngine {
 
     // 1. Resolve start-of-turn card effects FIRST (installations give power)
     this._pendingInstallPowerChoices = [];
+    this._pendingInstallInteractions = [];
     this.applyInstallationEffects(player);
 
     // If any installations need player power allocation, prompt for the first one
@@ -665,7 +673,10 @@ export class GameEngine {
       return; // Wait for player to allocate, then continueInitialPhase
     }
 
-    // No pending power choices, continue normally
+    // No pending power choices — check for install interactions
+    if (this.processNextInstallInteraction()) {
+      return; // Wait for install interaction to resolve
+    }
     this.continueInitialPhase();
   }
 
@@ -726,6 +737,57 @@ export class GameEngine {
       this.enterActionPhase();
     }
     // Otherwise, wait for player to acknowledge hazards (resolved via dispatch)
+  }
+
+  // Process the next queued install interaction, returns true if one was started
+  private processNextInstallInteraction(): boolean {
+    if (!this._pendingInstallInteractions || this._pendingInstallInteractions.length === 0) {
+      this._pendingInstallInteractions = null;
+      return false;
+    }
+
+    const player = this.getCurrentPlayer();
+    const next = this._pendingInstallInteractions.shift()!;
+
+    switch (next.type) {
+      case 'mayDiscardToDraw':
+        if (player.hand.length > 0) {
+          this.state.pendingAction = {
+            type: 'mayDiscardToDraw',
+            playerId: player.id,
+            data: { cardTitle: next.cardTitle, amount: next.data?.amount as number ?? 1 },
+          };
+          return true;
+        }
+        break;
+
+      case 'maySwapHandDiscard':
+        if (player.hand.length > 0 && player.discard.length > 0) {
+          this.state.pendingAction = {
+            type: 'maySwapHandDiscard',
+            playerId: player.id,
+            data: { cardTitle: next.cardTitle },
+          };
+          return true;
+        }
+        break;
+
+      case 'conditionalForceDiscard': {
+        const targetIds = next.data?.targets as number[] | undefined;
+        const amount = next.data?.amount as number ?? 1;
+        if (targetIds && targetIds.length > 0) {
+          const targets = targetIds.map(id => this.getPlayer(id)).filter((p): p is Player => p !== undefined);
+          if (targets.length > 0) {
+            this.startInteraction(player, targets, 'forceDiscard', next.cardTitle, { amount });
+            return true;
+          }
+        }
+        break;
+      }
+    }
+
+    // If this interaction was skipped, try the next one
+    return this.processNextInstallInteraction();
   }
 
   enterActionPhase(): void {
@@ -859,6 +921,44 @@ export class GameEngine {
         effects.push(`-${data.installDiscount} install cost`);
       }
 
+      // Queue optional install interactions for after power choices resolve
+      if (data.mayDiscardToDraw) {
+        if (!this._pendingInstallInteractions) this._pendingInstallInteractions = [];
+        this._pendingInstallInteractions.push({
+          type: 'mayDiscardToDraw',
+          cardTitle: card.title,
+          data: { amount: data.mayDiscardToDraw },
+        });
+        effects.push(`may discard→draw`);
+      }
+      if (data.maySwapHandDiscard) {
+        if (!this._pendingInstallInteractions) this._pendingInstallInteractions = [];
+        this._pendingInstallInteractions.push({
+          type: 'maySwapHandDiscard',
+          cardTitle: card.title,
+        });
+        effects.push(`may swap hand/discard`);
+      }
+      if (data.conditionalForceDiscard) {
+        // Check trigger condition
+        let triggered = false;
+        if (data.conditionalForceDiscard.trigger === 'computersPower3plus') {
+          triggered = player.currentPower.computers >= 3;
+        }
+        if (triggered) {
+          const fdTargets = this.getInteractionTargets(player, data.conditionalForceDiscard.target);
+          if (fdTargets.length > 0) {
+            if (!this._pendingInstallInteractions) this._pendingInstallInteractions = [];
+            this._pendingInstallInteractions.push({
+              type: 'conditionalForceDiscard',
+              cardTitle: card.title,
+              data: { amount: data.conditionalForceDiscard.amount, targets: fdTargets.map(p => p.id) },
+            });
+            effects.push(`force discard triggered`);
+          }
+        }
+      }
+
       // Log all effects from this installation
       if (effects.length > 0) {
         this.log(`${card.title} (installed): ${effects.join(', ')}`, 'reward');
@@ -944,6 +1044,19 @@ export class GameEngine {
       if (totalHazards > 0) {
         player.fame = Math.max(0, player.fame - totalHazards);
         this.log(`${player.name} loses ${totalHazards} Fame from ${totalHazards} hazard${totalHazards > 1 ? 's' : ''} in deck`, 'hazard');
+      }
+    }
+
+    // Apply end-game mission penalties (e.g., Forbidden Artifact: -1 Fame)
+    for (const player of this.state.players) {
+      for (const mission of player.completedMissions) {
+        if (mission.rewardData.endGamePenalty) {
+          const penalty = mission.rewardData.endGamePenalty;
+          if (penalty.fame) {
+            player.fame = Math.max(0, player.fame + penalty.fame);
+            this.log(`${player.name} loses ${Math.abs(penalty.fame)} Fame from ${mission.title}`, 'hazard');
+          }
+        }
       }
     }
 
@@ -1322,6 +1435,219 @@ export class GameEngine {
         };
       }
     }
+
+    // ── Player Interaction Effects ──────────────────────────────────────────
+
+    // Force discard (Signal Jam: opponent at location discards 1, they choose)
+    if (effectData.forceDiscard) {
+      const targets = this.getInteractionTargets(player, effectData.forceDiscard.target);
+      if (targets.length > 0) {
+        this.startInteraction(player, targets, 'forceDiscard', card.title, {
+          amount: effectData.forceDiscard.amount,
+        });
+      }
+    }
+
+    // Reveal hand + force discard choice (Data Breach: you see opponent's hand, you choose their discard)
+    if (effectData.revealHand && effectData.forceDiscardChoice) {
+      const targets = this.getInteractionTargets(player, 'playerAtLocation');
+      if (targets.length > 0) {
+        this.startInteraction(player, targets, 'revealAndChooseDiscard', card.title);
+      }
+    }
+
+    // Drain power (Ramming Speed: opponent at location loses 1⚡, they choose system)
+    if (effectData.drainPower) {
+      const targets = this.getInteractionTargets(player, effectData.drainPower.target);
+      // Only target opponents who have power to lose
+      const poweredTargets = targets.filter(t =>
+        SYSTEMS.some(s => t.currentPower[s] > 0)
+      );
+      if (poweredTargets.length > 0) {
+        this.startInteraction(player, poweredTargets, 'drainPower', card.title, {
+          amount: effectData.drainPower.amount,
+        });
+      }
+    }
+
+    // Pull player (Tractor Beam: pull player from adjacent location to yours)
+    if (effectData.pullPlayer) {
+      const adjacentTargets = this.state.players.filter(p =>
+        p.id !== player.id && Math.abs(p.location - player.location) <= effectData.pullPlayer!.range
+      );
+      if (adjacentTargets.length === 1) {
+        // Auto-select single target
+        const target = adjacentTargets[0];
+        target.location = player.location;
+        this.revealMissionAtLocation(target.location);
+        this.log(`${player.name} pulled ${target.name} to location ${player.location}`, 'action');
+      } else if (adjacentTargets.length > 1) {
+        this.state.pendingAction = {
+          type: 'targetPlayer',
+          playerId: player.id,
+          data: {
+            cardTitle: card.title,
+            interactionType: 'pullPlayer',
+            targetPlayerIds: adjacentTargets.map(p => p.id),
+          },
+        };
+      }
+    }
+
+    // Force uninstall (Repo Order: opponent at location returns installed card, they choose)
+    if (effectData.forceUninstall) {
+      const targets = this.getInteractionTargets(player, effectData.forceUninstall.target);
+      // Only target opponents who have installations
+      const installTargets = targets.filter(t =>
+        SYSTEMS.some(s => t.installations[s] !== null)
+      );
+      if (installTargets.length > 0) {
+        this.startInteraction(player, installTargets, 'forceUninstall', card.title);
+      }
+    }
+
+    // Force uninstall or discard (Contract Breach: you choose mode, then opponent suffers)
+    if (effectData.forceUninstallOrDiscard) {
+      const targets = this.getInteractionTargets(player, effectData.forceUninstallOrDiscard.target);
+      if (targets.length > 0) {
+        this.startInteraction(player, targets, 'forceUninstallOrDiscard', card.title, {
+          discardAmount: effectData.forceUninstallOrDiscard.discardAmount,
+        });
+      }
+    }
+  }
+
+  // Get valid interaction targets based on target type
+  private getInteractionTargets(player: Player, target: string): Player[] {
+    if (target === 'playerAtLocation') {
+      return this.state.players.filter(p => p.id !== player.id && p.location === player.location);
+    } else if (target === 'anyPlayer') {
+      return this.state.players.filter(p => p.id !== player.id);
+    }
+    return [];
+  }
+
+  // Start an interaction: auto-select single target or prompt for multi-target
+  private startInteraction(
+    player: Player,
+    targets: Player[],
+    interactionType: string,
+    cardTitle: string,
+    extra?: { amount?: number; discardAmount?: number }
+  ): void {
+    if (targets.length === 1) {
+      // Auto-select single target, chain directly to interaction
+      this.chainInteraction(player, targets[0], interactionType, cardTitle, extra);
+    } else {
+      // Multiple targets: prompt for selection
+      this.state.pendingAction = {
+        type: 'targetPlayer',
+        playerId: player.id,
+        data: {
+          cardTitle,
+          interactionType,
+          targetPlayerIds: targets.map(p => p.id),
+          amount: extra?.amount,
+          discardAmount: extra?.discardAmount,
+        },
+      };
+    }
+  }
+
+  // Chain from target selection into the actual interaction pending action
+  private chainInteraction(
+    player: Player,
+    target: Player,
+    interactionType: string,
+    cardTitle: string,
+    extra?: { amount?: number; discardAmount?: number }
+  ): void {
+    switch (interactionType) {
+      case 'forceDiscard':
+        this.state.pendingAction = {
+          type: 'forceDiscard',
+          playerId: target.id, // Opponent makes the choice
+          data: {
+            amount: extra?.amount ?? 1,
+            originPlayerId: player.id,
+            cardTitle,
+          },
+        };
+        break;
+
+      case 'revealAndChooseDiscard':
+        // Filter out hazards from revealed hand (they can't discard hazards)
+        const visibleHand = target.hand.filter(c => c.type !== 'hazard');
+        if (visibleHand.length > 0) {
+          this.state.pendingAction = {
+            type: 'chooseOpponentDiscard',
+            playerId: player.id, // Active player makes the choice
+            data: {
+              cardTitle,
+              targetPlayerId: target.id,
+              opponentHand: visibleHand,
+            },
+          };
+        }
+        break;
+
+      case 'drainPower':
+        this.state.pendingAction = {
+          type: 'choosePowerLoss',
+          playerId: target.id, // Opponent chooses which system
+          data: {
+            amount: extra?.amount ?? 1,
+            originPlayerId: player.id,
+            cardTitle,
+          },
+        };
+        break;
+
+      case 'pullPlayer':
+        target.location = player.location;
+        this.revealMissionAtLocation(target.location);
+        this.log(`${player.name} pulled ${target.name} to location ${player.location}`, 'action');
+        this.state.pendingAction = null; // No further action needed
+        break;
+
+      case 'forceUninstall':
+        this.state.pendingAction = {
+          type: 'forceUninstall',
+          playerId: target.id, // Opponent chooses which card
+          data: {
+            originPlayerId: player.id,
+            cardTitle,
+          },
+        };
+        break;
+
+      case 'forceUninstallOrDiscard':
+        // Check if opponent has installations — if not, default to discard
+        const hasInstalls = SYSTEMS.some(s => target.installations[s] !== null);
+        if (!hasInstalls) {
+          // No installations — force discard directly
+          this.state.pendingAction = {
+            type: 'forceDiscard',
+            playerId: target.id,
+            data: {
+              amount: extra?.discardAmount ?? 2,
+              originPlayerId: player.id,
+              cardTitle,
+            },
+          };
+        } else {
+          this.state.pendingAction = {
+            type: 'interactionChoice',
+            playerId: player.id, // Active player chooses the mode
+            data: {
+              cardTitle,
+              targetPlayerId: target.id,
+              discardAmount: extra?.discardAmount ?? 2,
+            },
+          };
+        }
+        break;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1358,6 +1684,7 @@ export class GameEngine {
     const hazard = this.state.hazardDeck.pop()!;
     toPlayer.discard.push(hazard);
     toPlayer.hazardsInDeck++;
+    fromPlayer.hazardsGivenThisTurn++;
 
     this.stats?.onHazardGiven(fromPlayer.id, toPlayer.id);
     this.log(`${fromPlayer.name} gave ${toPlayer.name} a hazard: ${hazard.title}`, 'hazard');
@@ -1370,6 +1697,20 @@ export class GameEngine {
 
     // Trophy passive: onGiveHazard
     this.checkTrophyPassives(fromPlayer, 'onGiveHazard');
+
+    // Chain Reaction install: +N⚡ per hazard given
+    for (const sys of SYSTEMS) {
+      const install = fromPlayer.installations[sys];
+      if (install && install.type === 'action') {
+        const installData = (install as ActionCard & { instanceId: string }).installData;
+        if (installData?.powerPerHazardGiven) {
+          const bonus = installData.powerPerHazardGiven;
+          const targetSys = getHighestSystem(fromPlayer.currentPower);
+          fromPlayer.currentPower[targetSys] = Math.min(MAX_POWER, fromPlayer.currentPower[targetSys] + bonus);
+          this.log(`  ${install.title} install: +${bonus}⚡ to ${targetSys}`, 'reward');
+        }
+      }
+    }
 
     return true;
   }
@@ -1627,6 +1968,12 @@ export class GameEngine {
     player.credits -= cost;
     player.discard.push(card);
 
+    // Fame on purchase
+    if (actionCard.fame) {
+      player.fame += actionCard.fame;
+      this.log(`  +${actionCard.fame} Fame from purchasing ${card.title}`, 'reward');
+    }
+
     this.stats?.onCreditSpent(player.id, cost);
     this.stats?.onCardBought(player.id, card.title);
 
@@ -1693,6 +2040,12 @@ export class GameEngine {
 
     // Pay total cost
     player.credits -= totalCost;
+
+    // Fame on purchase
+    if (actionCard.fame) {
+      player.fame += actionCard.fame;
+      this.log(`  +${actionCard.fame} Fame from purchasing ${card.title}`, 'reward');
+    }
 
     this.stats?.onCreditSpent(player.id, totalCost);
     this.stats?.onCardBought(player.id, card.title);
@@ -2318,14 +2671,22 @@ export class GameEngine {
         this.enterActionPhase();
         return true;
 
-      case 'targetPlayer':
+      case 'targetPlayer': {
         const targetId = choice as number;
         if (targetId >= 0) {
           const target = this.getPlayer(targetId);
           if (target) {
-            // Check bonusIfHadHazard before giving (Scrap Shot)
-            const targetHadHazard = target.hand.some(c => c.type === 'hazard');
+            // Check if this is a generalized interaction (not giveHazard)
+            if (pending.data?.interactionType) {
+              this.chainInteraction(player, target, pending.data.interactionType, pending.data.cardTitle || '', {
+                amount: pending.data.amount,
+                discardAmount: pending.data.discardAmount,
+              });
+              return true; // Chained into interaction pending action
+            }
 
+            // Default behavior: giveHazard
+            const targetHadHazard = target.hand.some(c => c.type === 'hazard');
             this.giveHazard(player, target);
 
             // Apply bonus if target already had a hazard (Scrap Shot)
@@ -2352,14 +2713,227 @@ export class GameEngine {
                   targetPlayerIds: this.state.players.filter(p => p.id !== player.id).map(p => p.id),
                 },
               };
-              return true; // Don't clear pending - chained into moveOtherPlayer
+              return true;
             }
           }
         } else {
-          // Cancelled - no target selected
           this.log(`${player.name} cancelled the ability`, 'info');
         }
         break;
+      }
+
+      // ── Interaction Resolution Cases ────────────────────────────────────
+
+      case 'forceDiscard': {
+        // Player/opponent chose card(s) to discard from their hand
+        const discardIds = Array.isArray(choice) ? choice as string[] : [choice as string];
+        for (const cardId of discardIds) {
+          const idx = player.hand.findIndex(c => c.instanceId === cardId);
+          if (idx >= 0) {
+            const [discarded] = player.hand.splice(idx, 1);
+            player.discard.push(discarded);
+            this.log(`${player.name} discarded ${discarded.title}`, 'action');
+          }
+        }
+        // Apply deferred effects (mayDiscardToDraw: draw after discard)
+        if (pending.data?.deferredEffects?.draw) {
+          this.drawCards(player, pending.data.deferredEffects.draw);
+          this.log(`  Drew ${pending.data.deferredEffects.draw} card${pending.data.deferredEffects.draw > 1 ? 's' : ''}`, 'reward');
+        }
+        // If this was from install phase, continue
+        if (pending.data?.originPlayerId === player.id && this._pendingInstallInteractions !== null) {
+          if (this.processNextInstallInteraction()) return true;
+          this.continueInitialPhase();
+          return true;
+        }
+        break;
+      }
+
+      case 'chooseOpponentDiscard': {
+        // Active player chose a card from opponent's revealed hand
+        const chosenId = choice as string;
+        const opponentId = pending.data?.targetPlayerId;
+        const opponent = opponentId !== undefined ? this.getPlayer(opponentId) : undefined;
+        if (opponent && chosenId) {
+          const idx = opponent.hand.findIndex(c => c.instanceId === chosenId);
+          if (idx >= 0) {
+            const [discarded] = opponent.hand.splice(idx, 1);
+            opponent.discard.push(discarded);
+            this.log(`${player.name} forced ${opponent.name} to discard ${discarded.title}`, 'action');
+          }
+        }
+        break;
+      }
+
+      case 'choosePowerLoss': {
+        // Opponent chose which system to lose power from
+        const systemChoice = choice as SystemType;
+        if (player.currentPower[systemChoice] > 0) {
+          player.currentPower[systemChoice] -= 1;
+          this.log(`${player.name} lost 1⚡ from ${systemChoice}`, 'hazard');
+        }
+        break;
+      }
+
+      case 'pullPlayer': {
+        // Active player chose which adjacent player to pull (fallback if not auto-resolved)
+        const pullTargetId = choice as number;
+        const pullTarget = this.getPlayer(pullTargetId);
+        const originPlayer = pending.data?.originPlayerId !== undefined
+          ? this.getPlayer(pending.data.originPlayerId)
+          : player;
+        if (pullTarget && originPlayer) {
+          pullTarget.location = originPlayer.location;
+          this.revealMissionAtLocation(pullTarget.location);
+          this.log(`${originPlayer.name} pulled ${pullTarget.name} to location ${originPlayer.location}`, 'action');
+        }
+        break;
+      }
+
+      case 'forceUninstall': {
+        // Opponent chose which installed card to return to discard
+        const uninstallSystem = choice as SystemType;
+        const installedCard = player.installations[uninstallSystem];
+        if (installedCard) {
+          player.installations[uninstallSystem] = null;
+          player.discard.push(installedCard);
+          this.log(`${player.name} returned ${installedCard.title} from ${uninstallSystem} to discard`, 'action');
+        }
+        break;
+      }
+
+      case 'interactionChoice': {
+        // Active player chose: 'discard' or 'uninstall'
+        const mode = choice as 'discard' | 'uninstall';
+        const interactionTarget = pending.data?.targetPlayerId !== undefined
+          ? this.getPlayer(pending.data.targetPlayerId)
+          : undefined;
+        if (interactionTarget) {
+          if (mode === 'discard') {
+            this.state.pendingAction = {
+              type: 'forceDiscard',
+              playerId: interactionTarget.id,
+              data: {
+                amount: pending.data?.discardAmount ?? 2,
+                originPlayerId: player.id,
+                cardTitle: pending.data?.cardTitle,
+              },
+            };
+            return true;
+          } else {
+            this.state.pendingAction = {
+              type: 'chooseOpponentInstall',
+              playerId: player.id,
+              data: {
+                targetPlayerId: interactionTarget.id,
+                cardTitle: pending.data?.cardTitle,
+              },
+            };
+            return true;
+          }
+        }
+        break;
+      }
+
+      case 'chooseOpponentInstall': {
+        // Active player chose which of opponent's installations to remove
+        const removeSystem = choice as SystemType;
+        const removeTarget = pending.data?.targetPlayerId !== undefined
+          ? this.getPlayer(pending.data.targetPlayerId)
+          : undefined;
+        if (removeTarget) {
+          const removedCard = removeTarget.installations[removeSystem];
+          if (removedCard) {
+            removeTarget.installations[removeSystem] = null;
+            removeTarget.discard.push(removedCard);
+            this.log(`${player.name} uninstalled ${removedCard.title} from ${removeTarget.name}'s ${removeSystem}`, 'action');
+          }
+        }
+        break;
+      }
+
+      // ── Install Phase Interactions ──────────────────────────────────────
+
+      case 'mayDiscardToDraw': {
+        const doIt = choice as boolean;
+        if (doIt && player.hand.length > 0) {
+          // Chain to card selection: reuse trashCard-like pending but for discard
+          this.state.pendingAction = {
+            type: 'forceDiscard', // Reuse: player picks from own hand to discard
+            playerId: player.id,
+            data: {
+              amount: 1,
+              cardTitle: pending.data?.cardTitle,
+              originPlayerId: player.id,
+            },
+          };
+          // After this resolves, draw a card — we'll handle in forceDiscard resolution
+          // Actually we need a different approach: tag it so we know to draw after
+          this.state.pendingAction.data!.deferredEffects = { draw: 1 };
+          return true;
+        }
+        // Skipped or no cards — try next install interaction
+        if (this.processNextInstallInteraction()) return true;
+        this.continueInitialPhase();
+        return true;
+      }
+
+      case 'maySwapHandDiscard': {
+        const doSwap = choice as boolean;
+        if (doSwap && player.hand.length > 0 && player.discard.length > 0) {
+          // Step 1: pick card from hand
+          this.state.pendingAction = {
+            type: 'selectSwapDiscard',
+            playerId: player.id,
+            data: {
+              cardTitle: pending.data?.cardTitle,
+              source: 'hand',
+            },
+          };
+          return true;
+        }
+        // Skipped — try next install interaction
+        if (this.processNextInstallInteraction()) return true;
+        this.continueInitialPhase();
+        return true;
+      }
+
+      case 'selectSwapDiscard': {
+        if (pending.data?.source === 'hand') {
+          // Player chose a hand card — now pick from discard
+          const handCardId = choice as string;
+          this.state.pendingAction = {
+            type: 'selectSwapDiscard',
+            playerId: player.id,
+            data: {
+              cardTitle: pending.data.cardTitle,
+              source: 'discard',
+              selectedCardId: handCardId,
+            },
+          };
+          return true;
+        } else if (pending.data?.source === 'discard') {
+          // Player chose a discard card — perform the swap
+          const discardCardId = choice as string;
+          const handCardId = pending.data.selectedCardId;
+          if (handCardId) {
+            const handIdx = player.hand.findIndex(c => c.instanceId === handCardId);
+            const discardIdx = player.discard.findIndex(c => c.instanceId === discardCardId);
+            if (handIdx >= 0 && discardIdx >= 0) {
+              const handCard = player.hand[handIdx];
+              const discardCard = player.discard[discardIdx];
+              player.hand[handIdx] = discardCard;
+              player.discard[discardIdx] = handCard;
+              this.log(`${player.name} swapped ${handCard.title} for ${discardCard.title}`, 'action');
+            }
+          }
+          // Try next install interaction
+          if (this.processNextInstallInteraction()) return true;
+          this.continueInitialPhase();
+          return true;
+        }
+        break;
+      }
 
       case 'draw3keep1':
         const keepIndex = choice as number;
@@ -2439,10 +3013,14 @@ export class GameEngine {
           return true; // Don't clear pending - chained into next power choice
         }
 
-        // If this was from the install phase, continue with captain abilities/hazards
+        // If this was from the install phase, check for pending install interactions
         if (pending.data?.fromInstallPhase) {
           this._pendingInstallPowerChoices = null;
           this.state.pendingAction = null;
+          // Process install interactions before continuing initial phase
+          if (this.processNextInstallInteraction()) {
+            return true;
+          }
           this.continueInitialPhase();
           return true;
         }

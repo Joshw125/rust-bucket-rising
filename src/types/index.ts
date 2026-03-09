@@ -130,6 +130,19 @@ export interface CardEffectData {
     count: number;
     fame: number;
   };
+
+  // Conditional misc
+  conditionalMissionDiscount?: { trigger: string; amount: number };
+  conditionalDraw?: { trigger: string; amount: number };
+
+  // Player interaction effects
+  forceDiscard?: { target: 'playerAtLocation' | 'anyPlayer'; amount: number };
+  revealHand?: boolean;
+  forceDiscardChoice?: { target: 'opponent'; amount: number };
+  drainPower?: { target: 'playerAtLocation'; amount: number };
+  pullPlayer?: { range: number };
+  forceUninstall?: { target: 'playerAtLocation'; chooser: 'target' | 'self' };
+  forceUninstallOrDiscard?: { target: 'playerAtLocation'; discardAmount: number; chooser: 'self' };
 }
 
 export interface InstallEffectData extends CardEffectData {
@@ -142,6 +155,12 @@ export interface InstallEffectData extends CardEffectData {
     targetDiscard?: number; // Target discards N cards when you give hazard
     credits?: number; // Gain N credits when you give hazard
   };
+
+  // New install effects
+  conditionalForceDiscard?: { trigger: string; target: string; amount: number };
+  powerPerHazardGiven?: number;
+  mayDiscardToDraw?: number;
+  maySwapHandDiscard?: boolean;
 }
 
 export interface ReactionData {
@@ -350,9 +369,10 @@ export interface Player {
   installDiscount: number;
   missionDiscount: number;
   extraPlays: number;
-  
+
   // Stats
   hazardsInDeck: number;
+  hazardsGivenThisTurn: number;
 
   // Turn tracking for reveals
   revealedStacksThisTurn: Record<1 | 3 | 5, number | false>; // Tracks which stack index was revealed per tier this turn (false = none)
@@ -392,7 +412,11 @@ export interface LogEntry {
 }
 
 export interface PendingAction {
-  type: 'powerAllocation' | 'targetPlayer' | 'selectCard' | 'draw3keep1' | 'trashCard' | 'installChoice' | 'revealHazards' | 'missionReward' | 'missionRewardChoice' | 'moveOtherPlayer' | 'hazardClearPower';
+  type: 'powerAllocation' | 'targetPlayer' | 'selectCard' | 'draw3keep1' | 'trashCard' | 'installChoice' | 'revealHazards' | 'missionReward' | 'missionRewardChoice' | 'moveOtherPlayer' | 'hazardClearPower'
+    // Interaction types
+    | 'forceDiscard' | 'chooseOpponentDiscard' | 'choosePowerLoss' | 'pullPlayer' | 'forceUninstall' | 'interactionChoice' | 'chooseOpponentInstall'
+    // Install effect types
+    | 'mayDiscardToDraw' | 'maySwapHandDiscard' | 'selectSwapDiscard';
   playerId: number;
   data?: {
     amount?: number;
@@ -411,6 +435,14 @@ export interface PendingAction {
     moveOther?: number; // Chain moveOther after giveHazard
     targetPlayerIds?: number[]; // Valid target player IDs for moveOtherPlayer
     fromInstallPhase?: boolean; // Power allocation is from turn-start installation effects
+
+    // Interaction fields
+    interactionType?: string; // Routes targetPlayer resolution to correct follow-up
+    targetPlayerId?: number; // The opponent being targeted
+    originPlayerId?: number; // The player who initiated the interaction
+    opponentHand?: CardInstance[]; // Revealed hand for chooseOpponentDiscard
+    discardAmount?: number; // For multi-discard (Contract Breach)
+    selectedCardId?: string; // For swap: the hand card chosen in step 1
   };
 }
 

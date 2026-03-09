@@ -15,9 +15,9 @@ import {
   resetInstanceIdCounter,
 } from './GameEngine';
 import { CAPTAINS, getCaptainById } from '@/data/captains';
-import { STARTING_CARDS, TIER_1_CARDS, HAZARD_CARDS } from '@/data/cards';
+import { STARTING_CARDS, TIER_1_CARDS, HAZARD_CARDS, ALL_ACTION_CARDS } from '@/data/cards';
 import { HAND_SIZE, VICTORY_THRESHOLD, MAX_POWER, STARTING_POWER } from '@/data/constants';
-import type { PowerState, Captain } from '@/types';
+import type { PowerState, Captain, ActionCard } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper Functions
@@ -989,6 +989,690 @@ describe('Installations', () => {
       expect(player.installations.weapons?.instanceId).toBe(card2.instanceId);
       // Old installation goes to discard pile
       expect(player.discard.some(c => c.instanceId === card1.instanceId)).toBe(true);
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fame on Purchase Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Fame on Purchase', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  it('should grant fame when buying a card with fame value', () => {
+    const engine = createTestGame();
+    const player = engine.getCurrentPlayer();
+    player.location = 1;
+    player.credits = 20;
+
+    // Find a card with fame in the market
+    const state = engine.getState();
+    const stack = state.marketStacks[1][0];
+    const topCard = stack.cards[stack.cards.length - 1];
+    const actionCard = ALL_ACTION_CARDS.find(c => c.id === topCard.id);
+
+    const initialFame = player.fame;
+    engine.dispatch({ type: 'BUY_CARD', stackIndex: 0, cardIndex: 0 });
+
+    if (actionCard?.fame) {
+      expect(player.fame).toBe(initialFame + actionCard.fame);
+    }
+  });
+
+  it('should grant fame when buy-and-installing a card with fame value', () => {
+    const engine = createTestGame();
+    const player = engine.getCurrentPlayer();
+    player.location = 1;
+    player.credits = 20;
+
+    // Find an installable card with fame
+    const fameCard = ALL_ACTION_CARDS.find(c => c.fame && c.installCost && c.system);
+    if (!fameCard) return; // Skip if no such card exists
+
+    // Put that card on top of a market stack and ensure it's revealed
+    const fameInstance = createCardInstance(fameCard);
+    const state = engine.getState();
+    state.marketStacks[1][0].cards.push(fameInstance);
+    state.marketStacks[1][0].revealed = true;
+
+    const initialFame = player.fame;
+    // Use default cardIndex (top card = last in array = the one we just pushed)
+    engine.dispatch({ type: 'BUY_AND_INSTALL', stackIndex: 0, targetSystem: fameCard.system! });
+
+    expect(player.fame).toBe(initialFame + fameCard.fame!);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// End-Game Penalty Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('End-Game Penalties', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  it('should apply fame penalty from completed missions at end game', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!;
+    const player1 = engine.getPlayer(1)!;
+
+    // Give player0 a mission with endGamePenalty
+    player0.fame = VICTORY_THRESHOLD + 5;
+    player1.fame = 10;
+
+    // Add a fake completed mission with endGamePenalty
+    player1.completedMissions.push({
+      id: 'test-penalty-mission',
+      instanceId: 'test-penalty-1',
+      zone: 'mid',
+      title: 'Test Penalty Mission',
+      requirements: { computers: 1 },
+      fame: 3,
+      type: 'Exploration',
+      rewardType: 'gear',
+      reward: 'Test',
+      rewardData: { endGamePenalty: { fame: -1 } },
+    } as any);
+
+    // Trigger end game
+    engine.dispatch({ type: 'END_TURN' }); // Player 0 ends turn, triggers end game
+    engine.dispatch({ type: 'END_TURN' }); // Player 1 ends turn, game ends
+
+    // Player 1 should have lost 1 fame from the penalty
+    expect(player1.fame).toBeLessThanOrEqual(9); // 10 - 1 penalty (may also lose from hazards)
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hazards Given Counter Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Hazards Given Counter', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  it('should initialize hazardsGivenThisTurn to 0', () => {
+    const engine = createTestGame();
+    const player = engine.getCurrentPlayer();
+    expect(player.hazardsGivenThisTurn).toBe(0);
+  });
+
+  it('should increment when giving a hazard', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!;
+    const player1 = engine.getPlayer(1)!;
+
+    engine['giveHazard'](player0, player1);
+    expect(player0.hazardsGivenThisTurn).toBe(1);
+
+    engine['giveHazard'](player0, player1);
+    expect(player0.hazardsGivenThisTurn).toBe(2);
+  });
+
+  it('should reset at turn start', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!;
+    const player1 = engine.getPlayer(1)!;
+
+    engine['giveHazard'](player0, player1);
+    expect(player0.hazardsGivenThisTurn).toBe(1);
+
+    engine.dispatch({ type: 'END_TURN' }); // End player 0's turn
+    engine.dispatch({ type: 'END_TURN' }); // End player 1's turn, back to player 0
+
+    expect(player0.hazardsGivenThisTurn).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chain Reaction (powerPerHazardGiven) Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Chain Reaction Install', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  it('should grant bonus power when giving hazard with powerPerHazardGiven installed', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!;
+    const player1 = engine.getPlayer(1)!;
+
+    // Find Chain Reaction card
+    const chainReaction = ALL_ACTION_CARDS.find(c => c.installData?.powerPerHazardGiven);
+    if (!chainReaction) return;
+
+    // Install it
+    const installed = createCardInstance(chainReaction);
+    player0.installations[chainReaction.system!] = installed;
+
+    const totalPowerBefore = getTotalPower(player0.currentPower);
+    engine['giveHazard'](player0, player1);
+
+    const totalPowerAfter = getTotalPower(player0.currentPower);
+    expect(totalPowerAfter).toBe(totalPowerBefore + chainReaction.installData!.powerPerHazardGiven!);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interaction Card Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+function findCard(id: string): ActionCard {
+  return ALL_ACTION_CARDS.find(c => c.id === id)!;
+}
+
+describe('Interaction Cards', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  describe('Signal Jam (forceDiscard)', () => {
+    it('should draw 1 and set forceDiscard pending when opponent at same location', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      // Place both at same location
+      player0.location = 3;
+      player1.location = 3;
+
+      const card = createCardInstance(findCard('signal-jam'));
+      player0.hand.push(card);
+
+      const handSizeBefore = player0.hand.length - 1; // -1 for the card we'll play
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Should have drawn 1 card
+      expect(player0.hand.length).toBe(handSizeBefore + 1);
+
+      // Should have pending forceDiscard on opponent
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('forceDiscard');
+      expect(pending!.playerId).toBe(player1.id); // Opponent chooses
+    });
+
+    it('should not trigger interaction when no opponent at location', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 5; // Different location
+
+      const card = createCardInstance(findCard('signal-jam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // No pending action since no opponent at location
+      expect(engine.getState().pendingAction).toBeNull();
+    });
+
+    it('should resolve forceDiscard by moving card from hand to discard', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const card = createCardInstance(findCard('signal-jam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Resolve: opponent picks a card to discard
+      const cardToDiscard = player1.hand[0];
+      const p1HandBefore = player1.hand.length;
+      const p1DiscardBefore = player1.discard.length;
+
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: cardToDiscard.instanceId });
+
+      expect(player1.hand.length).toBe(p1HandBefore - 1);
+      expect(player1.discard.length).toBe(p1DiscardBefore + 1);
+      expect(player1.discard.some(c => c.instanceId === cardToDiscard.instanceId)).toBe(true);
+    });
+  });
+
+  describe('Data Breach (revealHand + forceDiscardChoice)', () => {
+    it('should set chooseOpponentDiscard pending with opponent hand revealed', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const card = createCardInstance(findCard('data-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('chooseOpponentDiscard');
+      expect(pending!.playerId).toBe(player0.id); // Active player chooses
+      expect(pending!.data?.opponentHand).toBeDefined();
+      expect(pending!.data?.targetPlayerId).toBe(player1.id);
+    });
+
+    it('should resolve chooseOpponentDiscard by discarding chosen card from opponent', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const card = createCardInstance(findCard('data-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Pick the first non-hazard card from opponent's hand
+      const targetCard = player1.hand.find(c => c.type !== 'hazard')!;
+      const p1HandBefore = player1.hand.length;
+
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: targetCard.instanceId });
+
+      expect(player1.hand.length).toBe(p1HandBefore - 1);
+      expect(player1.discard.some(c => c.instanceId === targetCard.instanceId)).toBe(true);
+    });
+  });
+
+  describe('Ramming Speed (drainPower)', () => {
+    it('should grant move and set choosePowerLoss pending when opponent at location', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      player1.currentPower = { weapons: 2, computers: 2, engines: 2, logistics: 2 };
+
+      const card = createCardInstance(findCard('ramming-speed'));
+      player0.hand.push(card);
+
+      const movesBefore = player0.movesRemaining;
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Should have gained +1 move
+      expect(player0.movesRemaining).toBe(movesBefore + 1);
+
+      // Should have pending choosePowerLoss on opponent
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('choosePowerLoss');
+      expect(pending!.playerId).toBe(player1.id);
+    });
+
+    it('should resolve choosePowerLoss by reducing chosen system', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      player1.currentPower = { weapons: 3, computers: 2, engines: 2, logistics: 2 };
+
+      const card = createCardInstance(findCard('ramming-speed'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'weapons' });
+
+      expect(player1.currentPower.weapons).toBe(2); // Was 3, now 2
+    });
+
+    it('should skip drain when opponent has zero power', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      player1.currentPower = { weapons: 0, computers: 0, engines: 0, logistics: 0 };
+
+      const card = createCardInstance(findCard('ramming-speed'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // No pending action since opponent has no power
+      expect(engine.getState().pendingAction).toBeNull();
+    });
+  });
+
+  describe('Tractor Beam (pullPlayer)', () => {
+    it('should pull adjacent player to own location (auto-select single target)', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 4; // Adjacent
+
+      const card = createCardInstance(findCard('tractor-beam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Player 1 should be pulled to location 3
+      expect(player1.location).toBe(3);
+      // No pending action (auto-resolved for single target)
+      expect(engine.getState().pendingAction).toBeNull();
+    });
+
+    it('should not pull player from non-adjacent location', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 5; // Not adjacent (2 away)
+
+      const card = createCardInstance(findCard('tractor-beam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      expect(player1.location).toBe(5); // Unchanged
+    });
+
+    it('should prompt for target when multiple adjacent players', () => {
+      const engine = createTestGame(3);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+      const player2 = engine.getPlayer(2)!;
+
+      player0.location = 3;
+      player1.location = 2; // Adjacent
+      player2.location = 4; // Adjacent
+
+      const card = createCardInstance(findCard('tractor-beam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Should prompt for target selection
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('targetPlayer');
+      expect(pending!.data?.interactionType).toBe('pullPlayer');
+    });
+  });
+
+  describe('Repo Order (forceUninstall)', () => {
+    it('should set forceUninstall pending when opponent at location has installations', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      // Give opponent an installation
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('repo-order'));
+      player0.hand.push(card);
+
+      const creditsBefore = player0.credits;
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Should have gained +1 credit
+      expect(player0.credits).toBe(creditsBefore + 1);
+
+      // Should have pending forceUninstall on opponent
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('forceUninstall');
+      expect(pending!.playerId).toBe(player1.id);
+    });
+
+    it('should resolve forceUninstall by returning card to discard', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('repo-order'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'weapons' });
+
+      expect(player1.installations.weapons).toBeNull();
+      expect(player1.discard.some(c => c.instanceId === installCard.instanceId)).toBe(true);
+    });
+
+    it('should skip interaction when opponent has no installations', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      // No installations on player 1
+
+      const card = createCardInstance(findCard('repo-order'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // No pending action since opponent has no installations
+      expect(engine.getState().pendingAction).toBeNull();
+    });
+  });
+
+  describe('Contract Breach (forceUninstallOrDiscard)', () => {
+    it('should prompt interactionChoice when opponent has installations', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('contract-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('interactionChoice');
+      expect(pending!.playerId).toBe(player0.id); // Active player chooses mode
+    });
+
+    it('should default to forceDiscard when opponent has no installations', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const card = createCardInstance(findCard('contract-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('forceDiscard');
+      expect(pending!.data?.amount).toBe(2);
+      expect(pending!.playerId).toBe(player1.id);
+    });
+
+    it('should chain interactionChoice → discard → forceDiscard on opponent', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('contract-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Choose discard mode
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'discard' });
+
+      // Should chain to forceDiscard on opponent with amount: 2
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('forceDiscard');
+      expect(pending!.data?.amount).toBe(2);
+      expect(pending!.playerId).toBe(player1.id);
+    });
+
+    it('should chain interactionChoice → uninstall → chooseOpponentInstall', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('contract-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Choose uninstall mode
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'uninstall' });
+
+      // Should chain to chooseOpponentInstall on active player
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('chooseOpponentInstall');
+      expect(pending!.playerId).toBe(player0.id);
+      expect(pending!.data?.targetPlayerId).toBe(player1.id);
+    });
+
+    it('should resolve chooseOpponentInstall by removing installation', () => {
+      const engine = createTestGame(2);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+
+      player0.location = 3;
+      player1.location = 3;
+
+      const installCard = createCardInstance(TIER_1_CARDS[0]);
+      player1.installations.weapons = installCard;
+
+      const card = createCardInstance(findCard('contract-breach'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'uninstall' });
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: 'weapons' });
+
+      expect(player1.installations.weapons).toBeNull();
+      expect(player1.discard.some(c => c.instanceId === installCard.instanceId)).toBe(true);
+    });
+  });
+
+  describe('Multi-player target selection', () => {
+    it('should prompt targetPlayer when multiple opponents at location', () => {
+      const engine = createTestGame(3);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+      const player2 = engine.getPlayer(2)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      player2.location = 3;
+
+      const card = createCardInstance(findCard('signal-jam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('targetPlayer');
+      expect(pending!.data?.interactionType).toBe('forceDiscard');
+      expect(pending!.data?.targetPlayerIds).toContain(player1.id);
+      expect(pending!.data?.targetPlayerIds).toContain(player2.id);
+    });
+
+    it('should chain from targetPlayer to forceDiscard after selecting target', () => {
+      const engine = createTestGame(3);
+      const player0 = engine.getPlayer(0)!;
+      const player1 = engine.getPlayer(1)!;
+      const player2 = engine.getPlayer(2)!;
+
+      player0.location = 3;
+      player1.location = 3;
+      player2.location = 3;
+
+      const card = createCardInstance(findCard('signal-jam'));
+      player0.hand.push(card);
+
+      engine.dispatch({ type: 'PLAY_CARD', cardInstanceId: card.instanceId });
+
+      // Select player 1 as target
+      engine.dispatch({ type: 'RESOLVE_PENDING', choice: player1.id });
+
+      const pending = engine.getState().pendingAction;
+      expect(pending).not.toBeNull();
+      expect(pending!.type).toBe('forceDiscard');
+      expect(pending!.playerId).toBe(player1.id);
+    });
+  });
+
+  describe('onTrash trophy passive', () => {
+    it('should trigger onTrash passive when trashing a card', () => {
+      const engine = createTestGame();
+      const player = engine.getCurrentPlayer();
+
+      // Give player a trophy with onTrash passive
+      player.trophies.push({
+        id: 'test-ontrash',
+        instanceId: 'test-ontrash-1',
+        zone: 'near',
+        title: 'Test OnTrash Trophy',
+        requirements: {},
+        fame: 1,
+        type: 'Combat',
+        rewardType: 'trophy',
+        reward: 'Test',
+        rewardData: { passive: { trigger: 'onTrash', credits: 1 } },
+      } as any);
+
+      // Add a card to trash
+      const cardToTrash = player.hand[0];
+      const creditsBefore = player.credits;
+
+      engine['trashCard'](player, cardToTrash.instanceId, 'hand');
+
+      expect(player.credits).toBe(creditsBefore + 1);
     });
   });
 });

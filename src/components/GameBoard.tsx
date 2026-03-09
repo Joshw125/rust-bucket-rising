@@ -829,28 +829,52 @@ function TargetPlayerModal() {
   if (!shouldShow) return null;
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-  const source = (pendingAction.data as any)?.source;
+  const source = pendingAction.data?.source;
+  const interactionType = pendingAction.data?.interactionType;
 
-  const isLocationRestricted = source === 'giveHazardAtLocation';
-  const validTargets = gameState.players.filter(p => {
-    if (p.id === currentPlayer.id) return false;
-    if (isLocationRestricted && p.location !== currentPlayer.location) return false;
-    return true;
-  });
+  // Determine valid targets based on interaction type
+  const validTargetIds = pendingAction.data?.targetPlayerIds;
+  const isLocationRestricted = source === 'giveHazardAtLocation' || !interactionType;
+  const validTargets = validTargetIds
+    ? gameState.players.filter(p => validTargetIds.includes(p.id))
+    : gameState.players.filter(p => {
+        if (p.id === currentPlayer.id) return false;
+        if (isLocationRestricted && p.location !== currentPlayer.location) return false;
+        return true;
+      });
+
+  // Contextual text based on interaction type
+  const getModalInfo = () => {
+    switch (interactionType) {
+      case 'forceDiscard': return { icon: '📡', title: 'Select Target', desc: 'Choose a player to force discard', color: 'text-computers-light' };
+      case 'revealAndChooseDiscard': return { icon: '🔍', title: 'Select Target', desc: 'Choose a player to hack', color: 'text-computers-light' };
+      case 'drainPower': return { icon: '💥', title: 'Select Target', desc: 'Choose a player to drain power', color: 'text-engines-light' };
+      case 'pullPlayer': return { icon: '🧲', title: 'Pull Player', desc: 'Choose a player to pull to your location', color: 'text-engines-light' };
+      case 'forceUninstall': return { icon: '📋', title: 'Select Target', desc: 'Choose a player to repossess from', color: 'text-logistics-light' };
+      case 'forceUninstallOrDiscard': return { icon: '⚖️', title: 'Select Target', desc: 'Choose a player to target', color: 'text-logistics-light' };
+      default: return { icon: '🎯', title: 'Select Target', desc: 'Choose a player to give a hazard', color: 'text-weapons-light' };
+    }
+  };
+
+  const info = getModalInfo();
 
   const handleSelectTarget = (playerId: number) => {
     const target = gameState.players.find(p => p.id === playerId);
-    // Peek at the top hazard (it will be given to the target)
-    const topHazard = gameState.hazardDeck.length > 0
-      ? gameState.hazardDeck[gameState.hazardDeck.length - 1]
-      : null;
-    dispatch({ type: 'RESOLVE_PENDING', choice: playerId });
-    if (target) {
-      animEmit({
-        type: 'hazard-given',
-        targetName: target.name,
-        hazardTitle: topHazard?.title ?? 'Hazard',
-      });
+    if (!interactionType) {
+      // Default: hazard giving with animation
+      const topHazard = gameState.hazardDeck.length > 0
+        ? gameState.hazardDeck[gameState.hazardDeck.length - 1]
+        : null;
+      dispatch({ type: 'RESOLVE_PENDING', choice: playerId });
+      if (target) {
+        animEmit({
+          type: 'hazard-given',
+          targetName: target.name,
+          hazardTitle: topHazard?.title ?? 'Hazard',
+        });
+      }
+    } else {
+      dispatch({ type: 'RESOLVE_PENDING', choice: playerId });
     }
   };
 
@@ -858,9 +882,9 @@ function TargetPlayerModal() {
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
       <div className="game-panel p-6 max-w-md">
         <div className="text-center mb-4">
-          <div className="text-4xl mb-2">🎯</div>
-          <h2 className="text-2xl font-bold text-weapons-light">Select Target</h2>
-          <p className="text-slate-400 text-sm mt-2">Choose a player to give a hazard</p>
+          <div className="text-4xl mb-2">{info.icon}</div>
+          <h2 className={`text-2xl font-bold ${info.color}`}>{info.title}</h2>
+          <p className="text-slate-400 text-sm mt-2">{info.desc}</p>
         </div>
 
         {validTargets.length > 0 ? (
@@ -883,9 +907,6 @@ function TargetPlayerModal() {
         ) : (
           <div className="text-center py-4">
             <p className="text-slate-500">No valid targets available</p>
-            {isLocationRestricted && (
-              <p className="text-slate-600 text-sm mt-1">(No other players at your location)</p>
-            )}
             <button
               className="mt-4 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg"
               onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: -1 })}
@@ -1014,6 +1035,420 @@ function MoveOtherPlayerModal() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interaction Modals — Player Interaction Card Effects
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ForceDiscardModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+  const [selected, setSelected] = useState<string[]>([]);
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'forceDiscard') return null;
+  if (!shouldShow) return null;
+
+  const player = gameState.players.find(p => p.id === pending.playerId);
+  if (!player) return null;
+
+  const amount = pending.data?.amount ?? 1;
+  const handCards = player.hand.filter(c => c.type !== 'hazard');
+
+  const toggleCard = (id: string) => {
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : prev.length < amount ? [...prev, id] : prev
+    );
+  };
+
+  const handleConfirm = () => {
+    dispatch({ type: 'RESOLVE_PENDING', choice: amount === 1 ? selected[0] : selected });
+    setSelected([]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">📡</div>
+          <h2 className="text-2xl font-bold text-computers-light">
+            {player.name}: Discard {amount} Card{amount > 1 ? 's' : ''}
+          </h2>
+          <p className="text-slate-400 text-sm mt-2">
+            Select {amount} card{amount > 1 ? 's' : ''} to discard ({selected.length}/{amount})
+          </p>
+        </div>
+        {handCards.length > 0 ? (
+          <div className="flex gap-2 flex-wrap justify-center mb-4">
+            {handCards.map(card => (
+              <div key={card.instanceId} className="relative cursor-pointer" onClick={() => toggleCard(card.instanceId)}>
+                <Card card={card} size="normal" selected={selected.includes(card.instanceId)} />
+                {selected.includes(card.instanceId) && (
+                  <div className="absolute inset-0 bg-red-500/30 rounded flex items-center justify-center">
+                    <span className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold">Selected</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-slate-500 text-center py-4">No cards to discard</p>
+        )}
+        <div className="flex justify-center">
+          <button
+            className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={selected.length < Math.min(amount, handCards.length)}
+            onClick={handleConfirm}
+          >
+            Discard {selected.length > 0 ? `(${selected.length})` : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChooseOpponentDiscardModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'chooseOpponentDiscard') return null;
+  if (!shouldShow) return null;
+
+  const opponentId = pending.data?.targetPlayerId;
+  const opponent = opponentId !== undefined ? gameState.players.find(p => p.id === opponentId) : undefined;
+  const revealedHand = pending.data?.opponentHand ?? [];
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">🔍</div>
+          <h2 className="text-2xl font-bold text-computers-light">
+            {opponent?.name}'s Hand Revealed
+          </h2>
+          <p className="text-slate-400 text-sm mt-2">Choose a card to force them to discard</p>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-center">
+          {revealedHand.map(card => (
+            <div key={card.instanceId} className="relative">
+              <Card card={card} size="normal" />
+              <button
+                className="absolute inset-0 bg-red-500/0 hover:bg-red-500/30 transition-colors rounded flex items-center justify-center opacity-0 hover:opacity-100"
+                onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: card.instanceId })}
+              >
+                <span className="bg-red-600 text-white px-2 py-1 rounded text-xs font-bold">Discard This</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChoosePowerLossModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'choosePowerLoss') return null;
+  if (!shouldShow) return null;
+
+  const player = gameState.players.find(p => p.id === pending.playerId);
+  if (!player) return null;
+
+  const systems: SystemType[] = ['weapons', 'computers', 'engines', 'logistics'];
+  const systemColors: Record<SystemType, string> = {
+    weapons: 'bg-weapons/30 hover:bg-weapons/50 text-weapons-light border-weapons',
+    computers: 'bg-computers/30 hover:bg-computers/50 text-computers-light border-computers',
+    engines: 'bg-engines/30 hover:bg-engines/50 text-engines-light border-engines',
+    logistics: 'bg-logistics/30 hover:bg-logistics/50 text-logistics-light border-logistics',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-md">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">💥</div>
+          <h2 className="text-2xl font-bold text-engines-light">{player.name}: Lose Power</h2>
+          <p className="text-slate-400 text-sm mt-2">Choose a system to lose 1 power from</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {systems.map(sys => (
+            <button
+              key={sys}
+              disabled={player.currentPower[sys] <= 0}
+              className={clsx(
+                'p-3 rounded-lg font-semibold border-2 transition-all capitalize',
+                player.currentPower[sys] > 0
+                  ? systemColors[sys]
+                  : 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed'
+              )}
+              onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: sys })}
+            >
+              {sys} ({player.currentPower[sys]})
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ForceUninstallModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'forceUninstall') return null;
+  if (!shouldShow) return null;
+
+  const player = gameState.players.find(p => p.id === pending.playerId);
+  if (!player) return null;
+
+  const systems: SystemType[] = ['weapons', 'computers', 'engines', 'logistics'];
+  const installedSystems = systems.filter(s => player.installations[s] !== null);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-lg">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">📋</div>
+          <h2 className="text-2xl font-bold text-logistics-light">{player.name}: Return Installation</h2>
+          <p className="text-slate-400 text-sm mt-2">Choose an installed card to return to discard</p>
+        </div>
+        <div className="space-y-2">
+          {installedSystems.map(sys => {
+            const card = player.installations[sys]!;
+            return (
+              <button
+                key={sys}
+                className="w-full p-3 rounded-lg font-semibold text-white bg-slate-700 hover:bg-logistics/30 transition-all border-2 border-slate-600 hover:border-logistics flex items-center justify-between"
+                onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: sys })}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="capitalize text-sm text-slate-400">{sys}:</span>
+                  <span>{card.title}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InteractionChoiceModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'interactionChoice') return null;
+  if (!shouldShow) return null;
+
+  const targetId = pending.data?.targetPlayerId;
+  const target = targetId !== undefined ? gameState.players.find(p => p.id === targetId) : undefined;
+  const discardAmount = pending.data?.discardAmount ?? 2;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-md">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">⚖️</div>
+          <h2 className="text-2xl font-bold text-logistics-light">Contract Breach</h2>
+          <p className="text-slate-400 text-sm mt-2">Choose how to punish {target?.name}</p>
+        </div>
+        <div className="space-y-3">
+          <button
+            className="w-full p-4 rounded-lg font-semibold text-white bg-slate-700 hover:bg-red-500/30 transition-all border-2 border-slate-600 hover:border-red-500"
+            onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: 'discard' })}
+          >
+            <div className="text-lg">Force Discard {discardAmount}</div>
+            <div className="text-sm text-slate-400">{target?.name} chooses {discardAmount} cards to discard</div>
+          </button>
+          <button
+            className="w-full p-4 rounded-lg font-semibold text-white bg-slate-700 hover:bg-logistics/30 transition-all border-2 border-slate-600 hover:border-logistics"
+            onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: 'uninstall' })}
+          >
+            <div className="text-lg">Uninstall a Card</div>
+            <div className="text-sm text-slate-400">You choose which of {target?.name}'s installations to remove</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChooseOpponentInstallModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'chooseOpponentInstall') return null;
+  if (!shouldShow) return null;
+
+  const targetId = pending.data?.targetPlayerId;
+  const target = targetId !== undefined ? gameState.players.find(p => p.id === targetId) : undefined;
+  if (!target) return null;
+
+  const systems: SystemType[] = ['weapons', 'computers', 'engines', 'logistics'];
+  const installedSystems = systems.filter(s => target.installations[s] !== null);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-lg">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">🔧</div>
+          <h2 className="text-2xl font-bold text-logistics-light">Uninstall from {target.name}</h2>
+          <p className="text-slate-400 text-sm mt-2">Choose which installation to remove</p>
+        </div>
+        <div className="space-y-2">
+          {installedSystems.map(sys => {
+            const card = target.installations[sys]!;
+            return (
+              <button
+                key={sys}
+                className="w-full p-3 rounded-lg font-semibold text-white bg-slate-700 hover:bg-logistics/30 transition-all border-2 border-slate-600 hover:border-logistics flex items-center justify-between"
+                onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: sys })}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="capitalize text-sm text-slate-400">{sys}:</span>
+                  <span>{card.title}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InstallEffectPromptModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'mayDiscardToDraw' && pending?.type !== 'maySwapHandDiscard') return null;
+  if (!shouldShow) return null;
+
+  const isDiscard = pending.type === 'mayDiscardToDraw';
+  const title = isDiscard ? 'Discard to Draw' : 'Swap Hand/Discard';
+  const desc = isDiscard
+    ? `${pending.data?.cardTitle}: Discard 1 card to draw 1?`
+    : `${pending.data?.cardTitle}: Swap a hand card with a discard pile card?`;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-md">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">🔄</div>
+          <h2 className="text-2xl font-bold text-logistics-light">{title}</h2>
+          <p className="text-slate-400 text-sm mt-2">{desc}</p>
+        </div>
+        <div className="flex gap-3 justify-center">
+          <button
+            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold"
+            onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: true })}
+          >
+            Yes
+          </button>
+          <button
+            className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-semibold"
+            onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: false })}
+          >
+            No, Skip
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectSwapDiscardModal() {
+  const gameState = useGameStore((s) => s.gameState);
+  const dispatch = useGameStore((s) => s.dispatch);
+  const shouldShow = useShouldShowPendingAction();
+
+  if (!gameState) return null;
+  const pending = gameState.pendingAction;
+  if (pending?.type !== 'selectSwapDiscard') return null;
+  if (!shouldShow) return null;
+
+  const player = gameState.players.find(p => p.id === pending.playerId);
+  if (!player) return null;
+
+  const isFromHand = pending.data?.source === 'hand';
+  const cards = isFromHand ? player.hand.filter(c => c.type !== 'hazard') : player.discard;
+  const title = isFromHand ? 'Select Card from Hand' : 'Select Card from Discard';
+  const desc = isFromHand ? 'Choose a card to swap away' : 'Choose a card to swap in';
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+      <div className="game-panel p-6 max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="text-center mb-4">
+          <div className="text-4xl mb-2">🔄</div>
+          <h2 className="text-2xl font-bold text-logistics-light">{title}</h2>
+          <p className="text-slate-400 text-sm mt-2">{desc}</p>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-center">
+          {cards.map(card => (
+            <div key={card.instanceId} className="relative">
+              <Card card={card} size="normal" />
+              <button
+                className="absolute inset-0 bg-blue-500/0 hover:bg-blue-500/30 transition-colors rounded flex items-center justify-center opacity-0 hover:opacity-100"
+                onClick={() => dispatch({ type: 'RESOLVE_PENDING', choice: card.instanceId })}
+              >
+                <span className="bg-blue-600 text-white px-2 py-1 rounded text-xs font-bold">Select</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitingForOpponentOverlay() {
+  const gameState = useGameStore((s) => s.gameState);
+  const { isOnlineGame, localPlayerId } = useContext(GameBoardContext);
+
+  if (!gameState?.pendingAction || !isOnlineGame) return null;
+
+  // Show overlay when pending action is for someone else
+  const isForUs = gameState.pendingAction.playerId === localPlayerId;
+  if (isForUs) return null;
+
+  const targetPlayer = gameState.players.find(p => p.id === gameState.pendingAction!.playerId);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
+      <div className="game-panel p-6 max-w-sm text-center">
+        <div className="text-4xl mb-2 animate-pulse">⏳</div>
+        <h2 className="text-xl font-bold text-slate-300">
+          Waiting for {targetPlayer?.name ?? 'opponent'}...
+        </h2>
       </div>
     </div>
   );
@@ -1836,6 +2271,15 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
         <TargetPlayerModal />
         <Draw3Keep1Modal />
         <MoveOtherPlayerModal />
+        <ForceDiscardModal />
+        <ChooseOpponentDiscardModal />
+        <ChoosePowerLossModal />
+        <ForceUninstallModal />
+        <InteractionChoiceModal />
+        <ChooseOpponentInstallModal />
+        <InstallEffectPromptModal />
+        <SelectSwapDiscardModal />
+        <WaitingForOpponentOverlay />
 
         {/* AI/Online thinking indicators */}
         {currentPlayer.isAI && (
@@ -2440,6 +2884,17 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
 
       {/* Move other player modal */}
       <MoveOtherPlayerModal />
+
+      {/* Interaction modals */}
+      <ForceDiscardModal />
+      <ChooseOpponentDiscardModal />
+      <ChoosePowerLossModal />
+      <ForceUninstallModal />
+      <InteractionChoiceModal />
+      <ChooseOpponentInstallModal />
+      <InstallEffectPromptModal />
+      <SelectSwapDiscardModal />
+      <WaitingForOpponentOverlay />
 
       {/* UI Scale Settings Panel */}
       <ScaleSettingsPanel />
