@@ -10,7 +10,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Scrapper',
     effect: 'Start with +2 max Logistics',
     ability: { startBonus: { logistics: 2 } },
-    flavor: 'Nothing is useless.',
+    flavor: 'Season 3 fan favorite. Somehow still alive.',
     image: 'Scrapper.png',
   },
   {
@@ -18,7 +18,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Veteran',
     effect: 'Turn start: +1⚡ in highest system',
     ability: { turnStart: 'powerToHighest' },
-    flavor: 'Experience pays off.',
+    flavor: 'Seven-time returning contestant. The producers hate him.',
     image: 'Veteran.png',
   },
   {
@@ -26,7 +26,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Tycoon',
     effect: 'Turn start: +1 Credit',
     ability: { turnStart: 'credit' },
-    flavor: 'Profit first. Then plasma.',
+    flavor: 'The only contestant with a pre-show sponsorship deal.',
     image: 'Tycoon.png',
   },
   {
@@ -34,7 +34,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Mercenary',
     effect: 'Give hazard: +1 Credit',
     ability: { trigger: 'onGiveHazard', reward: 'credit' },
-    flavor: 'Chaos is billable.',
+    flavor: 'Banned from 2 previous seasons. Ratings gold.',
     image: 'Mercenary.png',
   },
   {
@@ -42,7 +42,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Navigator',
     effect: 'Once/turn: 1 free move',
     ability: { freeMove: 1 },
-    flavor: 'I make jumps.',
+    flavor: 'Set the speed record in Season 1. Still chasing that high.',
     image: 'Navigator.png',
   },
   {
@@ -50,7 +50,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Ghost',
     effect: 'Draw hazard: +1 Card',
     ability: { trigger: 'onDrawHazard', reward: 'draw' },
-    flavor: "What's wrecked can still haunt.",
+    flavor: 'Presumed dead after Season 4. Showed up anyway.',
     image: 'Ghost.png',
   },
   {
@@ -58,7 +58,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Broker',
     effect: 'Once/turn: Activate system twice',
     ability: { doubleActivate: true },
-    flavor: "Deals don't wait.",
+    flavor: 'Negotiated a cut of the merchandise before episode 1.',
     image: 'Broker.png',
   },
   {
@@ -66,7 +66,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Engineer',
     effect: 'Start with +1 Computers, +1 Logistics',
     ability: { startBonus: { computers: 1, logistics: 1 } },
-    flavor: 'Give me five minutes.',
+    flavor: 'Built her qualifier ship from a dumpster. On camera.',
     image: 'Engineer.png',
   },
   {
@@ -74,7 +74,7 @@ export const CAPTAINS: Captain[] = [
     name: 'Infiltrator',
     effect: 'Weapons on mission: give 1 hazard',
     ability: { trigger: 'onWeaponsMission', reward: 'giveHazard' },
-    flavor: 'They never see me coming.',
+    flavor: "Nobody remembers him winning. That's the point.",
     image: 'Infiltrator.png',
   },
 ];

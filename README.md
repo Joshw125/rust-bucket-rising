@@ -1,6 +1,6 @@
 # Rust Bucket Rising - Digital Playtest Edition
 
-A competitive spacefaring deck-builder board game for 2-4 players with real-time online multiplayer.
+The galaxy's most dangerous game show — a competitive spacefaring deck-builder for 2-4 players with real-time online multiplayer. Contestants pilot junker ships through deadly missions, sabotage rivals, and race for fame. Only one can win.
 
 ## Play Now
 

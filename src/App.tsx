@@ -42,7 +42,7 @@ function MainMenu({
               RISING
             </span>
           </h2>
-          <p className="text-amber-200/60 mt-4 text-lg">A Competitive Spacefaring Deck-Builder</p>
+          <p className="text-amber-200/60 mt-4 text-lg">The Galaxy's Most Dangerous Game Show</p>
           <p className="text-amber-300/30 mt-2 text-sm">Digital Playtest Edition</p>
         </div>
 

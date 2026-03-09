@@ -16,7 +16,7 @@ export const STARTING_CARDS: StarterCard[] = [
     effect: '+1 Credit',
     effectData: { credits: 1 },
     copies: 6,
-    flavor: 'Found some spare change in the couch cushions.',
+    flavor: 'Found some spare change in the couch cushions. The audience loves it.',
   },
   {
     id: 'cheap-battery',
@@ -25,7 +25,7 @@ export const STARTING_CARDS: StarterCard[] = [
     effect: '+1⚡ (choose system)',
     effectData: { powerChoice: 1 },
     copies: 3,
-    flavor: 'Every spark counts in this rust bucket.',
+    flavor: 'Provided by the show. Batteries not guaranteed.',
   },
   {
     id: 'basic-engines',
@@ -34,7 +34,7 @@ export const STARTING_CARDS: StarterCard[] = [
     effect: '+2⚡ Engines',
     effectData: { power: { engines: 2 } },
     copies: 1,
-    flavor: "Nothing a little space tape can't fix!",
+    flavor: "The duct tape is load-bearing. Don't touch it.",
   },
 ];
 
@@ -56,7 +56,7 @@ export const TIER_1_CARDS: ActionCard[] = [
     installEffect: 'Give hazard: target discards 1',
     installData: { onGiveHazard: { targetDiscard: 1 } },
     copies: 4,
-    flavor: '"It might be cobbled together, but it still makes things explode."',
+    flavor: "The producers insist all weapons are 'prop quality.' They are not.",
   },
   {
     id: 'engine-boosters',
@@ -71,7 +71,7 @@ export const TIER_1_CARDS: ActionCard[] = [
     installEffect: '+1 Move',
     installData: { moves: 1 },
     copies: 4,
-    flavor: "We rerouted power through the snack machine. It's faster now.",
+    flavor: 'Side effects include speed, smoke, and voided warranties.',
   },
   {
     id: 'computational-node',
@@ -86,7 +86,7 @@ export const TIER_1_CARDS: ActionCard[] = [
     installEffect: '+1 Card',
     installData: { draw: 1 },
     copies: 4,
-    flavor: "She's held together by duct tape and bad code—but she runs.",
+    flavor: 'Runs on hope, prayers, and a stolen operating system.',
   },
   {
     id: 'cargo-relay',
@@ -101,7 +101,7 @@ export const TIER_1_CARDS: ActionCard[] = [
     installEffect: '+1⚡ (any)',
     installData: { powerChoice: 1 },
     copies: 4,
-    flavor: '"You move it, you own it. You sell it, you survive."',
+    flavor: 'Finders keepers is technically in the show rules. Page 47.',
   },
   {
     id: 'expensive-countermeasures',
@@ -117,7 +117,7 @@ export const TIER_1_CARDS: ActionCard[] = [
     installEffect: 'Block hazard: +1 Card',
     installData: { power: { weapons: 1 } },
     copies: 4,
-    flavor: '"Expensive? Yes. Worth it? Ask the guy who didn\'t buy them."',
+    flavor: "Sponsored by MegaCorp. 'When you absolutely need to not die.\u2122'",
   },
 ];
 

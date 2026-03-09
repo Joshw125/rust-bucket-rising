@@ -1,7 +1,7 @@
 # Rust Bucket Rising — Project Guide
 
 ## What This Is
-Competitive spacefaring deck-builder board game (2-4 players) with online multiplayer.
+Competitive spacefaring deck-builder board game themed as a deadly game show (2-4 players) with online multiplayer.
 React 18 / TypeScript / Vite / Tailwind / Zustand / WebSocket server.
 
 - **Live**: https://rust-bucket-rising-client.onrender.com
