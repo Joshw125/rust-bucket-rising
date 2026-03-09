@@ -32,3 +32,7 @@ nul
 
 # Claude Code local settings
 .claude/
+
+# Sync tooling
+sync/credentials.json
+sync/cache/

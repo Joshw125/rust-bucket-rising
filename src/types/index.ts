@@ -175,12 +175,15 @@ export interface ActionCard extends BaseCard {
   system?: SystemType;
   effect: string;
   effectData: CardEffectData;
-  
+
+  // Fame gained on purchase
+  fame?: number;
+
   // Installation
   installCost?: number;
   installEffect?: string;
   installData?: InstallEffectData;
-  
+
   // Reaction
   reaction?: ReactionData;
 }
