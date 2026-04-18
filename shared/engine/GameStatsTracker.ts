@@ -3,7 +3,7 @@
 // Per-player per-turn stat tracking for balance analysis
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { Player, SystemType, PowerState } from '@/types';
+import type { Player, SystemType, PowerState } from '../types.js';
 
 const SYSTEMS: SystemType[] = ['weapons', 'computers', 'engines', 'logistics'];
 

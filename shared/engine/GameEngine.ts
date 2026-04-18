@@ -19,7 +19,7 @@ import type {
   MissionPools,
   ActionCard,
   HazardCard,
-} from '@/types';
+} from '../types.js';
 
 import {
   VICTORY_THRESHOLD,
@@ -29,11 +29,11 @@ import {
   SYSTEMS,
   ZONE_MAP,
   SYSTEM_CONFIG,
-} from '@/data/constants';
+} from '../data/constants.js';
 
-import { STARTING_CARDS, TIER_1_CARDS, TIER_2_CARDS, TIER_3_CARDS, HAZARD_CARDS } from '@/data/cards';
-import { GameStatsTracker } from './GameStatsTracker';
-import { NEAR_MISSIONS, MID_MISSIONS, DEEP_MISSIONS } from '@/data/missions';
+import { STARTING_CARDS, TIER_1_CARDS, TIER_2_CARDS, TIER_3_CARDS, HAZARD_CARDS } from '../data/cards.js';
+import { GameStatsTracker } from './GameStatsTracker.js';
+import { NEAR_MISSIONS, MID_MISSIONS, DEEP_MISSIONS } from '../data/missions.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utility Functions

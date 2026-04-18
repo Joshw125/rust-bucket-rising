@@ -4,9 +4,9 @@
 
 import { Fragment } from 'react';
 import { clsx } from 'clsx';
-import type { GameState, Player, TrackMission } from '@/types';
+import type { GameState, Player, TrackMission } from '@shared/types';
 import { MissionCard } from './Card';
-import { STATION_LOCATIONS, STATION_ICONS, ZONE_MAP } from '@/data/constants';
+import { STATION_LOCATIONS, STATION_ICONS, ZONE_MAP } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

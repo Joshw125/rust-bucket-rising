@@ -27,7 +27,7 @@ import { GameLogPanel } from './GameLogPanel';
 import { FameTrack } from './FameTrack';
 import { ActionButtonWithTooltip } from './ActionTooltip';
 import { PLAYER_COLORS } from './SpaceTrack';
-import type { SystemType, MissionInstance, CardInstance, Player, Captain } from '@/types';
+import type { SystemType, MissionInstance, CardInstance, Player, Captain } from '@shared/types';
 import { useState, useCallback, useEffect, useRef, createContext, useContext } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────

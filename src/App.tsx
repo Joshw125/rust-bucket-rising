@@ -8,8 +8,8 @@ import { GameBoard } from './components/GameBoard';
 import { SimulationMode } from './components/SimulationMode';
 import { OnlineLobby } from './components/OnlineLobby';
 import { useGameStore, useMultiplayer } from './hooks';
-import { CAPTAINS } from './data';
-import type { Captain, AIStrategy, GameAction, GameState } from './types';
+import { CAPTAINS } from '@shared/data';
+import type { Captain, AIStrategy, GameAction, GameState } from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Menu Screen

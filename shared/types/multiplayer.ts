@@ -19,13 +19,15 @@ export interface RoomPlayer {
 
 export interface Room {
   id: string;
-  code: string;
+  code: string; // 4-character join code
   name: string;
   hostId: string;
   players: RoomPlayer[];
   maxPlayers: number;
   status: 'lobby' | 'playing' | 'finished';
-  gameState: unknown | null;
+  gameState: unknown | null; // GameState when playing
+  stateHash: string | null; // Latest state hash (legacy; removed in Phase 3)
+  lastActivity: number; // Timestamp of last message (for server-side cleanup)
   createdAt: number;
 }
 

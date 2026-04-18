@@ -5,8 +5,8 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import type { Player, SystemType } from '@/types';
-import { SYSTEM_CONFIG, SYSTEMS, MAX_POWER } from '@/data/constants';
+import type { Player, SystemType } from '@shared/types';
+import { SYSTEM_CONFIG, SYSTEMS, MAX_POWER } from '@shared/data/constants';
 import { PLAYER_COLORS } from './SpaceTrack';
 
 // ─────────────────────────────────────────────────────────────────────────────

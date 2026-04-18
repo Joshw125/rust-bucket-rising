@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { create } from 'zustand';
-import type { CardInstance, SystemType } from '@/types';
+import type { CardInstance, SystemType } from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Animation Event Types

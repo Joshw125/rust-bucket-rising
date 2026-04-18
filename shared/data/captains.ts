@@ -2,7 +2,7 @@
 // RUST BUCKET RISING - Captain Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { Captain } from '@/types';
+import type { Captain } from '../types.js';
 
 export const CAPTAINS: Captain[] = [
   {

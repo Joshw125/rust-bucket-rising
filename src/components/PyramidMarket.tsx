@@ -6,9 +6,9 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
-import type { MarketStacks, MarketStackInfo, CardInstance, Player, SystemType, ActionCard } from '@/types';
+import type { MarketStacks, MarketStackInfo, CardInstance, Player, SystemType, ActionCard } from '@shared/types';
 import { CardStack, CardBack, Card } from './Card';
-import { SYSTEMS, SYSTEM_CONFIG, STATION_ICONS } from '@/data/constants';
+import { SYSTEMS, SYSTEM_CONFIG, STATION_ICONS } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

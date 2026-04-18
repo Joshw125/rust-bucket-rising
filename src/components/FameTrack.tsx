@@ -5,8 +5,8 @@
 
 import { clsx } from 'clsx';
 import { PLAYER_COLORS } from './SpaceTrack';
-import { VICTORY_THRESHOLD } from '@/data/constants';
-import type { Player } from '@/types';
+import { VICTORY_THRESHOLD } from '@shared/data/constants';
+import type { Player } from '@shared/types';
 
 interface FameTrackProps {
   players: Player[];

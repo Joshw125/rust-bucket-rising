@@ -19,9 +19,9 @@ export {
   setupMarket,
   setupMissions,
   setupHazardDeck,
-} from './GameEngine';
+} from './GameEngine.js';
 
-export { AIEngine } from './AIEngine';
-export { SimulationRunner } from './SimulationRunner';
+export { AIEngine } from './AIEngine.js';
+export { SimulationRunner } from './SimulationRunner.js';
 
-export type { default as GameEngineType } from './GameEngine';
+export type { default as GameEngineType } from './GameEngine.js';

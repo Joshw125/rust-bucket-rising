@@ -4,9 +4,9 @@
 
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { GameState, GameAction, Captain, CardInstance, SystemType, PowerAllocation, MissionInstance, AIStrategy } from '@/types';
-import { GameEngine } from '@/engine';
-import { AIEngine } from '@/engine/AIEngine';
+import type { GameState, GameAction, Captain, CardInstance, SystemType, PowerAllocation, MissionInstance, AIStrategy } from '@shared/types';
+import { GameEngine } from '@shared/engine';
+import { AIEngine } from '@shared/engine/AIEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

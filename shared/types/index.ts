@@ -594,4 +594,4 @@ export interface PowerAllocationModalProps {
 // Multiplayer Types (re-exported)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export * from './multiplayer';
+export * from './multiplayer.js';

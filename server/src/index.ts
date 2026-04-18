@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { Room, RoomPlayer, ClientMessage, ServerMessage } from './types.js';
+import type { Room, RoomPlayer, ClientMessage, ServerMessage } from '../../shared/types/multiplayer.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration

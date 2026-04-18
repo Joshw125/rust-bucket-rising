@@ -2,11 +2,11 @@
   "name": "rust-bucket-rising-server",
   "version": "1.0.0",
   "description": "WebSocket server for Rust Bucket Rising multiplayer",
-  "main": "dist/index.js",
+  "main": "dist/server/src/index.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/server/src/index.js",
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {

@@ -7,8 +7,8 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import type { Player, SystemType, CardInstance, MissionInstance, ActionCard } from '@/types';
-import { SYSTEM_CONFIG, MAX_POWER } from '@/data/constants';
+import type { Player, SystemType, CardInstance, MissionInstance, ActionCard } from '@shared/types';
+import { SYSTEM_CONFIG, MAX_POWER } from '@shared/data/constants';
 import { Card, MissionCard } from './Card';
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,8 +4,8 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import type { CardInstance, ActionCard, StarterCard, HazardCard, SystemType, MissionInstance } from '@/types';
-import { CARD_SIZES } from '@/data/constants';
+import type { CardInstance, ActionCard, StarterCard, HazardCard, SystemType, MissionInstance } from '@shared/types';
+import { CARD_SIZES } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

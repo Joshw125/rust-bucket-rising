@@ -4,8 +4,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { clsx } from 'clsx';
-import type { Player, SystemType, CardInstance, MissionInstance } from '@/types';
-import { SYSTEM_CONFIG, MAX_POWER, TABLEAU_POSITIONS, VICTORY_THRESHOLD } from '@/data/constants';
+import type { Player, SystemType, CardInstance, MissionInstance } from '@shared/types';
+import { SYSTEM_CONFIG, MAX_POWER, TABLEAU_POSITIONS, VICTORY_THRESHOLD } from '@shared/data/constants';
 
 // Position type for overlay styling
 interface OverlayPosition {

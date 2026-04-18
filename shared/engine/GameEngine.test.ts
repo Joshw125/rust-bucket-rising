@@ -13,11 +13,11 @@ import {
   getHighestSystem,
   clampPower,
   resetInstanceIdCounter,
-} from './GameEngine';
-import { CAPTAINS, getCaptainById } from '@/data/captains';
-import { STARTING_CARDS, TIER_1_CARDS, HAZARD_CARDS, ALL_ACTION_CARDS } from '@/data/cards';
-import { HAND_SIZE, VICTORY_THRESHOLD, MAX_POWER, STARTING_POWER } from '@/data/constants';
-import type { PowerState, Captain, ActionCard } from '@/types';
+} from './GameEngine.js';
+import { CAPTAINS, getCaptainById } from '../data/captains.js';
+import { STARTING_CARDS, TIER_1_CARDS, HAZARD_CARDS, ALL_ACTION_CARDS } from '../data/cards.js';
+import { HAND_SIZE, VICTORY_THRESHOLD, MAX_POWER, STARTING_POWER } from '../data/constants.js';
+import type { PowerState, Captain, ActionCard } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper Functions

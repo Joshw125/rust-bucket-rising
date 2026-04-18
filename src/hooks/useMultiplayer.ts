@@ -11,7 +11,7 @@ import type {
   MultiplayerState,
   GameAction,
   GameState,
-} from '@/types';
+} from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration

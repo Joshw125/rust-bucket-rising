@@ -2,7 +2,7 @@
 // RUST BUCKET RISING - Game Constants
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { SystemConfig, SystemType } from '@/types';
+import type { SystemConfig, SystemType } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Game Settings

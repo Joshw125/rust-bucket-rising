@@ -5,8 +5,8 @@
 
 import { useState, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { SimulationRunner } from '@/engine/SimulationRunner';
-import type { AIStrategy, SimulationResults } from '@/types';
+import { SimulationRunner } from '@shared/engine/SimulationRunner';
+import type { AIStrategy, SimulationResults } from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

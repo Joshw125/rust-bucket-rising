@@ -9,12 +9,12 @@ import type {
   SimulationConfig,
   SimulationResults,
   EconomyStats,
-} from '@/types';
+} from '../types.js';
 
-import { GameEngine } from './GameEngine';
-import { AIEngine } from './AIEngine';
-import type { PlayerGameSummary } from './GameStatsTracker';
-import { CAPTAINS } from '@/data/captains';
+import { GameEngine } from './GameEngine.js';
+import { AIEngine } from './AIEngine.js';
+import type { PlayerGameSummary } from './GameStatsTracker.js';
+import { CAPTAINS } from '../data/captains.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

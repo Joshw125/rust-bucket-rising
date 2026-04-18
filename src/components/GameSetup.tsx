@@ -5,8 +5,8 @@
 
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { CAPTAINS } from '@/data';
-import type { Captain, AIStrategy } from '@/types';
+import { CAPTAINS } from '@shared/data';
+import type { Captain, AIStrategy } from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -6,10 +6,10 @@
 import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import type { CardInstance, Player, SystemType, ActionCard, HazardCard } from '@/types';
-import { STARTING_CARDS } from '@/data/cards';
+import type { CardInstance, Player, SystemType, ActionCard, HazardCard } from '@shared/types';
+import { STARTING_CARDS } from '@shared/data/cards';
 import { Card } from './Card';
-import { SYSTEMS, SYSTEM_CONFIG } from '@/data/constants';
+import { SYSTEMS, SYSTEM_CONFIG } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -13,9 +13,9 @@ import type {
   MissionInstance,
   AIStrategy,
   PowerState,
-} from '@/types';
+} from '../types.js';
 
-import { SYSTEMS, SYSTEM_CONFIG } from '@/data/constants';
+import { SYSTEMS, SYSTEM_CONFIG } from '../data/constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

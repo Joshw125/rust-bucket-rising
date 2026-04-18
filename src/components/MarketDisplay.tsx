@@ -4,9 +4,9 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import type { MarketStacks, MarketStackInfo, CardInstance, Player, SystemType, ActionCard } from '@/types';
+import type { MarketStacks, MarketStackInfo, CardInstance, Player, SystemType, ActionCard } from '@shared/types';
 import { CardStack } from './Card';
-import { SYSTEMS } from '@/data/constants';
+import { SYSTEMS } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -4,9 +4,9 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import type { Player, SystemType, CardInstance, ActionCard, MissionInstance, HazardCard } from '@/types';
+import type { Player, SystemType, CardInstance, ActionCard, MissionInstance, HazardCard } from '@shared/types';
 import { Card } from './Card';
-import { SYSTEM_CONFIG, MAX_POWER, SYSTEMS } from '@/data/constants';
+import { SYSTEM_CONFIG, MAX_POWER, SYSTEMS } from '@shared/data/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

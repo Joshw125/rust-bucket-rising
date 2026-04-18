@@ -15,8 +15,8 @@ import {
   useMyPlayer,
   useCanStartGame,
 } from '@/hooks';
-import { CAPTAINS } from '@/data';
-import type { Captain } from '@/types';
+import { CAPTAINS } from '@shared/data';
+import type { Captain } from '@shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Captain Card Choice Component (matches GameSetup style)
