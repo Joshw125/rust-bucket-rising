@@ -33,6 +33,10 @@ coverage/
 # Windows reserved filenames
 nul
 
+# Loose reference files at repo root
+*.pdf
+*.JPG
+
 # Claude Code local settings
 .claude/
 
