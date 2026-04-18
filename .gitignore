@@ -24,6 +24,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Server runtime data (analytics log)
+server/data/
+
 # Test coverage
 coverage/
 
