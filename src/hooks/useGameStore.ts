@@ -210,9 +210,20 @@ export const useGameStore = create<GameStore>()(
     },
 
     // Apply full state update from the authoritative server.
+    // Defensive: some protocol-mismatched or stale servers may send messages
+    // without a `state` field. Swallowing that gracefully beats unmounting
+    // the whole React tree with an uncaught throw.
     applyServerState: (newState) => {
       const { engine } = get();
       if (!engine) return;
+      if (!newState || typeof newState !== 'object') {
+        console.warn(
+          '[applyServerState] ignoring invalid state from server:',
+          newState,
+          '(server/client protocol mismatch? check server version)',
+        );
+        return;
+      }
       engine.loadState(newState);
       set((state) => {
         state.gameState = cloneGameState(engine.getState());

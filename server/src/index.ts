@@ -788,8 +788,10 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
-      version: 3,
-      features: ['captainSelection', 'stateSync', 'rejoin', 'analytics'],
+      version: 4,
+      architecture: 'server-authoritative',
+      features: ['captainSelection', 'stateSync', 'rejoin', 'analytics', 'serverEngine'],
+      activeEngines: roomEngines.size,
       rooms: rooms.size,
       clients: clients.size,
       uptime: process.uptime(),
