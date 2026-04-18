@@ -42,7 +42,12 @@ export type ClientMessage =
   | { type: 'SELECT_CAPTAIN'; captainId: string }
   | { type: 'TOGGLE_READY' }
   | { type: 'START_GAME' }
-  | { type: 'GAME_ACTION'; action: unknown; stateHash?: string }
+  // GAME_ACTION: server is authoritative — it validates, dispatches,
+  // and broadcasts the resulting state. `action` is typed as unknown here
+  // (server casts to GameAction) to avoid a circular import.
+  | { type: 'GAME_ACTION'; action: unknown }
+  // STATE_SNAPSHOT from client is legacy (Phase 2+: server owns state).
+  // Still accepted to avoid breaking older clients mid-rollout, but ignored.
   | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
   | { type: 'REQUEST_RESYNC' }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string; stats: unknown }
@@ -54,6 +59,14 @@ export type ClientMessage =
 // Server -> Client Messages
 // -----------------------------------------------------------------------------
 
+// Player mapping shared between GAME_STARTED and room state
+export interface NetworkPlayerInfo {
+  id: number; // in-game player index (0..n-1)
+  name: string;
+  captainId: string;
+  networkId: string; // WebSocket player id
+}
+
 export type ServerMessage =
   | { type: 'CONNECTED'; playerId: string }
   | { type: 'ERROR'; message: string }
@@ -62,8 +75,14 @@ export type ServerMessage =
   | { type: 'ROOM_UPDATE'; room: Room }
   | { type: 'PLAYER_JOINED'; player: RoomPlayer }
   | { type: 'PLAYER_LEFT'; playerId: string; newHostId?: string }
-  | { type: 'GAME_STARTED'; gameState: { players: Array<{ id: number; name: string; captainId: string; networkId: string }> } }
-  | { type: 'GAME_STATE_UPDATE'; gameState: { action: unknown; fromPlayerIndex: number; fromPlayerId: string; stateHash?: string } }
+  // GAME_STARTED now carries the authoritative initial state. Clients load
+  // it directly instead of creating their own engine and diverging.
+  | { type: 'GAME_STARTED'; gameState: { players: NetworkPlayerInfo[]; initialState: unknown } }
+  // GAME_STATE_UPDATE now broadcasts the full state after each server-side
+  // dispatch. `fromPlayerIndex` is advisory (for animations/logs).
+  // `action` is echoed so clients can render "what just happened" cues.
+  | { type: 'GAME_STATE_UPDATE'; state: unknown; action: unknown; fromPlayerIndex: number }
+  // STATE_SNAPSHOT: sent on reconnect/resync. Client overwrites local state.
   | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
   | { type: 'RESYNC_REQUESTED'; playerId: string }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string }

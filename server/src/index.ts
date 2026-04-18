@@ -9,7 +9,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import type { Room, RoomPlayer, ClientMessage, ServerMessage } from '../../shared/types/multiplayer.js';
+import type { Room, RoomPlayer, ClientMessage, ServerMessage, NetworkPlayerInfo } from '../../shared/types/multiplayer.js';
+import type { GameAction, GameState } from '../../shared/types/index.js';
+import { GameEngine } from '../../shared/engine/GameEngine.js';
+import { getCaptainById } from '../../shared/data/captains.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
@@ -62,6 +65,9 @@ interface ConnectedClient {
 const rooms = new Map<string, Room>();
 const clients = new Map<WebSocket, ConnectedClient>();
 const playerToRoom = new Map<string, string>();
+// Server-authoritative game engines, one per active room.
+// Created in handleStartGame, deleted when room is removed.
+const roomEngines = new Map<string, GameEngine>();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Utility Functions
@@ -211,9 +217,10 @@ function leaveRoom(room: Room, playerId: string): void {
   room.players.splice(playerIndex, 1);
   playerToRoom.delete(playerId);
 
-  // If room is empty, delete it
+  // If room is empty, delete it (and its engine)
   if (room.players.length === 0) {
     rooms.delete(room.id);
+    roomEngines.delete(room.id);
     return;
   }
 
@@ -496,21 +503,44 @@ function handleStartGame(ws: WebSocket, client: ConnectedClient): void {
     return;
   }
 
-  // Start the game - client will create the actual game state
-  room.status = 'playing';
-  touchRoom(room);
-
-  // Send start message with player info for game initialization
-  const playerInfo = room.players.map((p, idx) => ({
+  // Build the player info for multiplayer routing (network id <-> game index).
+  const playerInfo: NetworkPlayerInfo[] = room.players.map((p, idx) => ({
     id: idx,
     name: p.name,
     captainId: p.captainId!,
-    networkId: p.id, // Map network ID to game player ID
+    networkId: p.id,
   }));
+
+  // Server-authoritative: instantiate the GameEngine here. This is the ONE
+  // and only engine for this room — clients will render whatever state we
+  // broadcast. No more independent random shuffles per client.
+  try {
+    const enginePlayers = playerInfo.map((info) => {
+      const captain = getCaptainById(info.captainId);
+      if (!captain) {
+        throw new Error(`Unknown captain id: ${info.captainId}`);
+      }
+      return { name: info.name, captain, isAI: false };
+    });
+    const engine = new GameEngine(enginePlayers);
+    engine.enableStatsTracking();
+    roomEngines.set(room.id, engine);
+    room.gameState = engine.getState();
+  } catch (err) {
+    console.error(`Failed to create engine for room ${room.code}:`, err);
+    send(ws, { type: 'ERROR', message: 'Failed to initialize game. Try again.' });
+    return;
+  }
+
+  room.status = 'playing';
+  touchRoom(room);
 
   broadcast(room, {
     type: 'GAME_STARTED',
-    gameState: { players: playerInfo }
+    gameState: {
+      players: playerInfo,
+      initialState: room.gameState,
+    },
   });
 
   console.log(`Game started in room ${room.code} with ${room.players.length} players`);
@@ -527,7 +557,7 @@ function handleStartGame(ws: WebSocket, client: ConnectedClient): void {
   });
 }
 
-function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknown, stateHash?: string): void {
+function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknown): void {
   if (!client.roomId) return;
 
   const room = rooms.get(client.roomId);
@@ -535,42 +565,65 @@ function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknow
 
   touchRoom(room);
 
-  // Find player index for this client
   const playerIndex = room.players.findIndex(p => p.id === client.playerId);
   if (playerIndex === -1) return;
 
-  // Broadcast the action to all other players (they'll validate on their end)
-  broadcast(room, {
-    type: 'GAME_STATE_UPDATE',
-    gameState: {
-      action,
-      fromPlayerIndex: playerIndex,
-      fromPlayerId: client.playerId,
-      stateHash,
-    }
-  }, client.playerId);
-}
-
-function handleStateSnapshot(ws: WebSocket, client: ConnectedClient, snapshot: unknown, stateHash: string): void {
-  if (!client.roomId) return;
-
-  const room = rooms.get(client.roomId);
-  if (!room || room.status !== 'playing') return;
-
-  touchRoom(room);
-
-  // Only the host stores snapshots on the server (single source of truth)
-  if (client.playerId === room.hostId) {
-    room.gameState = snapshot;
-    room.stateHash = stateHash;
+  const engine = roomEngines.get(room.id);
+  if (!engine) {
+    console.warn(`No engine for room ${room.code} — dropping action`);
+    send(ws, { type: 'ERROR', message: 'Game engine not found. Try rejoining.' });
+    return;
   }
 
-  // Broadcast snapshot to all other players for resync
+  // Server-authoritative dispatch. If the engine rejects (invalid move,
+  // wrong turn, etc.), send an error back to JUST the originating client
+  // and don't broadcast — everyone else's state is already correct.
+  let result: boolean;
+  try {
+    result = engine.dispatch(action as GameAction);
+  } catch (err) {
+    console.error(`Engine threw on action from ${client.playerId}:`, err);
+    send(ws, { type: 'ERROR', message: 'That action caused an error. State restored.' });
+    // Even on throw, broadcast current state so all clients are in sync.
+    broadcast(room, {
+      type: 'GAME_STATE_UPDATE',
+      state: engine.getState(),
+      action,
+      fromPlayerIndex: playerIndex,
+    });
+    return;
+  }
+
+  if (!result) {
+    // Invalid action — tell just the sender. No need to broadcast; no one
+    // else's state changed.
+    send(ws, { type: 'ERROR', message: 'Action was rejected by the server (invalid move).' });
+    return;
+  }
+
+  const newState = engine.getState();
+  room.gameState = newState;
+
+  // Broadcast the new authoritative state to EVERYONE including the sender.
+  // Clients overwrite their local state with this — no local dispatch happens.
   broadcast(room, {
-    type: 'STATE_SNAPSHOT',
-    snapshot,
-    stateHash,
-  }, client.playerId);
+    type: 'GAME_STATE_UPDATE',
+    state: newState,
+    action,
+    fromPlayerIndex: playerIndex,
+  });
+}
+
+// Phase 2+: server is authoritative, so client-sent snapshots are no longer
+// needed or trusted. We keep the handler as a silent no-op to avoid errors
+// from any in-flight legacy clients (though a freshly deployed client should
+// never send this).
+function handleStateSnapshot(_ws: WebSocket, client: ConnectedClient, _snapshot: unknown, _stateHash: string): void {
+  if (!client.roomId) return;
+  const room = rooms.get(client.roomId);
+  if (!room) return;
+  touchRoom(room);
+  // intentionally drop the payload
 }
 
 function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
@@ -581,18 +634,31 @@ function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
 
   touchRoom(room);
 
-  // If we have a stored snapshot, send it directly
+  // Phase 2+: always serve the authoritative state directly from the engine.
+  // No more asking the host — the server IS the host.
+  const engine = roomEngines.get(room.id);
+  if (engine) {
+    send(ws, {
+      type: 'STATE_SNAPSHOT',
+      snapshot: engine.getState(),
+      stateHash: '',
+    });
+    console.log(`Sent authoritative snapshot to ${client.playerId} for resync`);
+    return;
+  }
+
+  // Fallback: if engine is missing for some reason, fall back to last-known
+  // stored state (shouldn't happen in practice).
   if (room.gameState) {
     send(ws, {
       type: 'STATE_SNAPSHOT',
       snapshot: room.gameState,
-      stateHash: room.stateHash || '',
+      stateHash: '',
     });
-    console.log(`Sent stored snapshot to ${client.playerId} for resync`);
     return;
   }
 
-  // Otherwise, ask the host to send a fresh snapshot
+  // Last resort: ask the host (legacy path)
   const hostClient = getClientByPlayerId(room.hostId);
   if (hostClient) {
     send(hostClient.ws, {
@@ -682,7 +748,7 @@ function handleMessage(ws: WebSocket, client: ConnectedClient, data: string): vo
         handleStartGame(ws, client);
         break;
       case 'GAME_ACTION':
-        handleGameAction(ws, client, message.action, message.stateHash);
+        handleGameAction(ws, client, message.action);
         break;
       case 'STATE_SNAPSHOT':
         handleStateSnapshot(ws, client, message.snapshot, message.stateHash);
@@ -828,6 +894,7 @@ setInterval(() => {
       // Notify players
       broadcast(room, { type: 'ERROR', message: 'Room closed due to inactivity.' });
       rooms.delete(id);
+      roomEngines.delete(id);
       console.log(`Room ${room.code} cleaned up due to inactivity (${Math.round((now - room.lastActivity) / 60000)}min idle)`);
     }
   }

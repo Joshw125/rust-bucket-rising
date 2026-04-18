@@ -37,15 +37,37 @@ export interface GameStore {
   isAIThinking: boolean;
   aiSpeed: 'slow' | 'normal' | 'fast'; // AI action delay
 
-  // Multiplayer callback - called after successful dispatch, before AI processing
+  // Multiplayer callback - called after successful dispatch, before AI processing.
+  // Legacy from the client-authoritative architecture; unused in online mode
+  // once Phase 2 is live but kept for any local-mode plumbing.
   onActionDispatched: ((action: GameAction) => void) | null;
   setOnActionDispatched: (callback: ((action: GameAction) => void) | null) => void;
 
-  // Snapshot race condition protection
+  // Snapshot race condition protection (legacy; irrelevant once server is
+  // authoritative — kept briefly so Phase 2 doesn't have to rip loadSnapshot).
   lastLocalDispatchTime: number;
+
+  // Online-mode flags. When isOnlineGame is true, dispatch() does NOT run
+  // the local engine — it just forwards the action to the server via
+  // onlineDispatch and waits for GAME_STATE_UPDATE to update gameState.
+  // This is how we eliminate the divergent-random-shuffle bug class.
+  isOnlineGame: boolean;
+  onlineDispatch: ((action: GameAction) => void) | null;
 
   // Actions
   initGame: (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => void;
+  // Initialize an online game with server-provided initial state. The engine
+  // is created as a local "mirror" that just renders server state; actions
+  // get routed through onlineDispatch rather than being dispatched locally.
+  initOnlineGame: (
+    players: Array<{ name: string; captain: Captain; isAI?: boolean }>,
+    initialState: GameState,
+    onlineDispatch: (action: GameAction) => void,
+  ) => void;
+  // Apply a full state update from the authoritative server. Overwrites
+  // the local mirror engine's state. Used in online mode for GAME_STATE_UPDATE
+  // and STATE_SNAPSHOT receipts.
+  applyServerState: (state: GameState) => void;
   dispatch: (action: GameAction) => boolean;
   processAITurn: () => void;
   setAISpeed: (speed: 'slow' | 'normal' | 'fast') => void;
@@ -118,6 +140,8 @@ export const useGameStore = create<GameStore>()(
     aiSpeed: 'normal' as const,
     onActionDispatched: null,
     lastLocalDispatchTime: 0,
+    isOnlineGame: false,
+    onlineDispatch: null,
 
     // Set the callback for multiplayer action sync
     setOnActionDispatched: (callback) => {
@@ -126,7 +150,7 @@ export const useGameStore = create<GameStore>()(
       });
     },
 
-    // Initialize a new game
+    // Initialize a new local (hotseat/AI/offline) game
     initGame: (players) => {
       const engine = new GameEngine(players);
       engine.enableStatsTracking();
@@ -148,6 +172,8 @@ export const useGameStore = create<GameStore>()(
         state.viewingCard = null;
         state.showMarket = false;
         state.isAIThinking = false;
+        state.isOnlineGame = false;
+        state.onlineDispatch = null;
       });
 
       // Check if first player is AI and start their turn
@@ -159,32 +185,78 @@ export const useGameStore = create<GameStore>()(
       }
     },
 
-    // Dispatch an action to the engine and sync state
+    // Initialize an online game from a server-provided initial state.
+    // We create a local mirror engine so UI queries (canCompleteMission,
+    // etc.) keep working, but the engine is a READ-ONLY view of whatever
+    // the server sends us — our own dispatches skip it and go straight
+    // to the server.
+    initOnlineGame: (players, initialState, onlineDispatch) => {
+      const engine = new GameEngine(players);
+      engine.enableStatsTracking();
+      // Overwrite the randomized local setup with the server's authoritative state
+      engine.loadState(initialState);
+
+      set((state) => {
+        state.engine = engine;
+        state.aiEngines = new Map();
+        state.gameState = cloneGameState(engine.getState());
+        state.selectedCardId = null;
+        state.viewingCard = null;
+        state.showMarket = false;
+        state.isAIThinking = false;
+        state.isOnlineGame = true;
+        state.onlineDispatch = onlineDispatch;
+      });
+    },
+
+    // Apply full state update from the authoritative server.
+    applyServerState: (newState) => {
+      const { engine } = get();
+      if (!engine) return;
+      engine.loadState(newState);
+      set((state) => {
+        state.gameState = cloneGameState(engine.getState());
+      });
+    },
+
+    // Dispatch an action.
+    //  - Online mode: forward to the server and return optimistically. The
+    //    local engine does NOT run the action; the UI updates when the server
+    //    broadcasts the new authoritative state.
+    //  - Local mode: run the action on the local engine and update state.
     dispatch: (action) => {
-      const { engine, onActionDispatched } = get();
+      const { engine, onActionDispatched, isOnlineGame, onlineDispatch } = get();
       if (!engine) return false;
 
+      // Server-authoritative path
+      if (isOnlineGame) {
+        if (onlineDispatch) {
+          onlineDispatch(action);
+        } else {
+          console.warn('Online game missing onlineDispatch — action dropped:', action);
+        }
+        // Return true optimistically; the button UI expects a boolean.
+        // If the server rejects, it will send an ERROR message.
+        return true;
+      }
+
+      // Local path (unchanged)
       const result = engine.dispatch(action);
       set((state) => {
-        // Clone state so Immer doesn't freeze the engine's internal state
         state.gameState = cloneGameState(engine.getState());
-        // Track when local player dispatched (for snapshot race protection)
         if (result) {
           state.lastLocalDispatchTime = Date.now();
         }
       });
 
-      // Call multiplayer sync callback if set (for online games)
       if (result && onActionDispatched) {
         onActionDispatched(action);
       }
 
-      // After any action, check if it's now an AI player's turn
       const gameState = engine.getState();
       if (!gameState.gameOver) {
         const currentPlayer = gameState.players[gameState.currentPlayerIndex];
         if (currentPlayer.isAI && !get().isAIThinking) {
-          // Schedule AI turn processing
           setTimeout(() => get().processAITurn(), AI_DELAYS[get().aiSpeed]);
         }
       }

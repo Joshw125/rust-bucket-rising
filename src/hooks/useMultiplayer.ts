@@ -59,7 +59,9 @@ interface MultiplayerStore extends MultiplayerState {
   startGame: () => void;
 
   // Game actions
-  sendGameAction: (action: GameAction, stateHash?: string) => void;
+  // Server-authoritative: send action, server validates+dispatches+broadcasts.
+  sendGameAction: (action: GameAction) => void;
+  // Legacy (Phase 3 removal target); server ignores client snapshots now.
   sendStateSnapshot: (snapshot: GameState, stateHash: string) => void;
   requestResync: () => void;
   sendGameOver: (winnerId: number, winnerName: string, stats: unknown) => void;
@@ -77,14 +79,19 @@ interface MultiplayerStore extends MultiplayerState {
   _attemptReconnect: () => void;
   _stopReconnect: () => void;
 
-  // Game state sync callbacks
-  onGameStart: ((players: Array<{ id: number; name: string; captainId: string; networkId: string }>) => void) | null;
-  onGameAction: ((action: GameAction, fromPlayerIndex: number, stateHash?: string) => void) | null;
+  // Game state sync callbacks.
+  // In the server-authoritative architecture:
+  //  - onGameStart fires once with the server's initial state
+  //  - onGameStateUpdate fires on every server-side dispatch (full state)
+  //  - onStateSnapshot fires on resync/rejoin (also full state)
+  //  - onResyncRequested is legacy (kept for back-compat; noop in Phase 2+)
+  onGameStart: ((players: Array<{ id: number; name: string; captainId: string; networkId: string }>, initialState: unknown) => void) | null;
+  onGameStateUpdate: ((state: unknown, action: unknown, fromPlayerIndex: number) => void) | null;
   onStateSnapshot: ((snapshot: unknown, stateHash: string) => void) | null;
   onResyncRequested: (() => void) | null;
   setGameCallbacks: (
-    onStart: (players: Array<{ id: number; name: string; captainId: string; networkId: string }>) => void,
-    onAction: (action: GameAction, fromPlayerIndex: number, stateHash?: string) => void,
+    onStart: (players: Array<{ id: number; name: string; captainId: string; networkId: string }>, initialState: unknown) => void,
+    onStateUpdate: (state: unknown, action: unknown, fromPlayerIndex: number) => void,
     onSnapshot: (snapshot: unknown, stateHash: string) => void,
     onResync: () => void,
   ) => void;
@@ -104,7 +111,7 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
   ws: null,
   pingInterval: null,
   onGameStart: null,
-  onGameAction: null,
+  onGameStateUpdate: null,
   onStateSnapshot: null,
   onResyncRequested: null,
   pendingSnapshot: null,
@@ -253,12 +260,12 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
     get()._send({ type: 'START_GAME' });
   },
 
-  // Send a game action with optional state hash
-  sendGameAction: (action: GameAction, stateHash?: string) => {
-    get()._send({ type: 'GAME_ACTION', action, stateHash });
+  // Send a game action to the authoritative server.
+  sendGameAction: (action: GameAction) => {
+    get()._send({ type: 'GAME_ACTION', action });
   },
 
-  // Send a full state snapshot (host sends after each turn end)
+  // Legacy: server ignores client-sent snapshots now. Kept for back-compat.
   sendStateSnapshot: (snapshot: GameState, stateHash: string) => {
     get()._send({ type: 'STATE_SNAPSHOT', snapshot, stateHash });
   },
@@ -435,16 +442,15 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
           set({ room: { ...room, status: 'playing' } });
         }
         if (onGameStart) {
-          onGameStart(message.gameState.players);
+          onGameStart(message.gameState.players, message.gameState.initialState);
         }
         break;
       }
 
       case 'GAME_STATE_UPDATE': {
-        const { onGameAction } = get();
-        if (onGameAction) {
-          const { action, fromPlayerIndex, stateHash } = message.gameState;
-          onGameAction(action as GameAction, fromPlayerIndex, stateHash);
+        const { onGameStateUpdate } = get();
+        if (onGameStateUpdate) {
+          onGameStateUpdate(message.state, message.action, message.fromPlayerIndex);
         }
         break;
       }
@@ -497,9 +503,9 @@ export const useMultiplayer = create<MultiplayerStore>((set, get) => ({
   },
 
   // Set game state callbacks
-  setGameCallbacks: (onStart, onAction, onSnapshot, onResync) => {
+  setGameCallbacks: (onStart, onStateUpdate, onSnapshot, onResync) => {
     const { pendingSnapshot } = get();
-    set({ onGameStart: onStart, onGameAction: onAction, onStateSnapshot: onSnapshot, onResyncRequested: onResync });
+    set({ onGameStart: onStart, onGameStateUpdate: onStateUpdate, onStateSnapshot: onSnapshot, onResyncRequested: onResync });
 
     // If there's a buffered snapshot from a rejoin, deliver it to the new handler
     if (pendingSnapshot && onSnapshot) {

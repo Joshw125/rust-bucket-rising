@@ -126,21 +126,20 @@ function App() {
   const [isOnlineGame, setIsOnlineGame] = useState(false);
   const [localPlayerIndex, setLocalPlayerIndex] = useState<number | null>(null);
   const initGame = useGameStore((s) => s.initGame);
-  const applyRemoteAction = useGameStore((s) => s.applyRemoteAction);
+  const initOnlineGame = useGameStore((s) => s.initOnlineGame);
+  const applyServerState = useGameStore((s) => s.applyServerState);
   const loadSnapshot = useGameStore((s) => s.loadSnapshot);
   const gameState = useGameStore((s) => s.gameState);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
-  const sendStateSnapshot = useMultiplayer((s) => s.sendStateSnapshot);
   const playerId = useMultiplayer((s) => s.playerId);
   const room = useMultiplayer((s) => s.room);
 
-  // Track whether we're the host for snapshot duties
+  // In the server-authoritative architecture, "host" is purely a room-management
+  // concept (only host can kick/start) — it carries no game-logic authority.
+  // We keep the ref only for the `isOnlineGame && isHost` UI checks elsewhere.
   const isHost = room?.hostId === playerId;
   const isHostRef = useRef(isHost);
   isHostRef.current = isHost;
-
-  // Track desync count for snapshot loading
-  const desyncCountRef = useRef(0);
 
   const handleStartGame = (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => {
     setIsOnlineGame(false);
@@ -148,12 +147,15 @@ function App() {
     setScreen('game');
   };
 
-  const handleOnlineGameStart = (players: Array<{ id: number; name: string; captainId: string; networkId: string }>, myNetworkId: string) => {
-    // Find which player index we are
+  const handleOnlineGameStart = (
+    players: Array<{ id: number; name: string; captainId: string; networkId: string }>,
+    myNetworkId: string,
+    initialState: unknown | null,
+  ) => {
+    // Which in-game player index are we?
     const myIndex = players.findIndex(p => p.networkId === myNetworkId);
     setLocalPlayerIndex(myIndex);
 
-    // Convert network player info to game player format
     const gamePlayers = players.map(p => ({
       name: p.name,
       captain: CAPTAINS.find(c => c.id === p.captainId)!,
@@ -161,157 +163,110 @@ function App() {
     }));
 
     setIsOnlineGame(true);
-    initGame(gamePlayers);
-    setScreen('game');
 
-    // Set up multiplayer callbacks immediately (can't wait for useEffect render cycle)
-    // so the initial state snapshot from the host is handled correctly
-    setGameCallbacks(
-      () => {}, // onGameStart already handled
-      handleRemoteGameAction,
-      handleStateSnapshot,
-      handleResyncRequested,
-    );
+    // Wire up the online dispatch: any local action (button click, etc.) goes
+    // to the server, which validates+dispatches+broadcasts. We never run the
+    // engine locally in online mode — we just render whatever the server sends.
+    const onlineDispatchFn = (action: GameAction) => {
+      useMultiplayer.getState().sendGameAction(action);
+    };
 
-    // Check for a pending snapshot (rejoin scenario).
-    // On rejoin, the server sends a snapshot before the game engine exists.
-    // It gets buffered in pendingSnapshot. Load it now to avoid showing the wrong state.
-    const pendingSnapshot = useMultiplayer.getState().pendingSnapshot;
-    if (pendingSnapshot) {
-      // Load the host's snapshot immediately (overrides the fresh initGame state)
-      loadSnapshot(pendingSnapshot.snapshot as GameState, myIndex);
-      useMultiplayer.setState({ pendingSnapshot: null });
-    } else if (isHostRef.current) {
-      // Normal start: host sends initial snapshot so all clients converge
-      setTimeout(() => {
-        const state = useGameStore.getState().gameState;
-        const hash = useGameStore.getState().computeStateHash();
-        if (state) {
-          useMultiplayer.getState().sendStateSnapshot(state, hash);
-        }
-      }, 300);
-    }
-  };
-
-  // Helper: host sends a snapshot of its current state to all clients
-  const sendHostSnapshot = useCallback(() => {
-    if (!isHostRef.current) return;
-    // Send synchronously — engine dispatch is synchronous so state is already settled
-    const finalState = useGameStore.getState().gameState;
-    const finalHash = useGameStore.getState().computeStateHash();
-    if (finalState) {
-      useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-    }
-  }, []);
-
-  // Handle game actions received from other players
-  const handleRemoteGameAction = useCallback((action: GameAction, fromPlayerIndex: number, _remoteStateHash?: string) => {
-    // Only apply actions from other players (we already applied our own locally)
-    if (fromPlayerIndex !== localPlayerIndex) {
-      applyRemoteAction(action);
-
-      // HOST DUTY: After ANY remote action, send a snapshot to keep everyone in sync.
-      // This is critical because each client shuffles independently (Math.random()),
-      // so without frequent snapshots, states will diverge on any random operation.
-      if (isHostRef.current) {
-        sendHostSnapshot();
+    if (initialState) {
+      // Normal start: server gave us an authoritative initial state.
+      initOnlineGame(gamePlayers, initialState as GameState, onlineDispatchFn);
+    } else {
+      // Rejoin: no initial state yet. Start with a placeholder so the engine
+      // exists (UI queries need it); the STATE_SNAPSHOT handler below will
+      // overwrite with the real state as soon as it arrives.
+      const pendingSnapshot = useMultiplayer.getState().pendingSnapshot;
+      const stateToUse = (pendingSnapshot?.snapshot ?? null) as GameState | null;
+      if (stateToUse) {
+        initOnlineGame(gamePlayers, stateToUse, onlineDispatchFn);
+        useMultiplayer.setState({ pendingSnapshot: null });
+      } else {
+        // Use a fresh engine state as placeholder; will be replaced by
+        // STATE_SNAPSHOT. The UI may briefly show wrong state — acceptable.
+        initGame(gamePlayers);
+        // After initGame, flip to online mode and wire the dispatch.
+        useGameStore.setState({ isOnlineGame: true, onlineDispatch: onlineDispatchFn });
       }
     }
-  }, [localPlayerIndex, applyRemoteAction, sendHostSnapshot]);
 
-  // Handle receiving a state snapshot (for resync or rejoin)
+    setScreen('game');
+
+    // Install the game callbacks. We do this inline (not in a useEffect) so
+    // the callbacks are live before any server message arrives.
+    setGameCallbacks(
+      () => {}, // onGameStart already consumed by OnlineLobby → this handler
+      handleServerStateUpdate,
+      handleStateSnapshot,
+      () => {}, // resync request: noop (server no longer asks host)
+    );
+  };
+
+  // Full state update from the authoritative server. Overwrites local mirror.
+  const handleServerStateUpdate = useCallback(
+    (state: unknown, _action: unknown, _fromPlayerIndex: number) => {
+      applyServerState(state as GameState);
+    },
+    [applyServerState],
+  );
+
+  // Full-state snapshot (on resync/rejoin). Behaves identically to state update.
   const handleStateSnapshot = useCallback((snapshot: unknown, _stateHash: string) => {
-    loadSnapshot(snapshot as GameState, localPlayerIndex ?? undefined);
-    desyncCountRef.current = 0;
-  }, [loadSnapshot, localPlayerIndex]);
-
-  // Handle resync request (host sends their current state)
-  const handleResyncRequested = useCallback(() => {
-    if (!isHostRef.current) return;
-    const currentState = useGameStore.getState().gameState;
-    const hash = useGameStore.getState().computeStateHash();
-    if (currentState) {
-      console.log('Resync requested, sending snapshot...');
-      sendStateSnapshot(currentState, hash);
+    // In online mode, the server is authoritative — skip loadSnapshot's
+    // grace-period/preservation logic and just install the state directly.
+    if (useGameStore.getState().isOnlineGame) {
+      applyServerState(snapshot as GameState);
+    } else {
+      loadSnapshot(snapshot as GameState, localPlayerIndex ?? undefined);
     }
-  }, [sendStateSnapshot]);
+  }, [applyServerState, loadSnapshot, localPlayerIndex]);
 
-  // Set up the game callbacks for multiplayer
+  // Keep callbacks fresh as dependencies change
   useEffect(() => {
     if (isOnlineGame) {
       setGameCallbacks(
-        () => {}, // onGameStart already handled by OnlineLobby
-        handleRemoteGameAction,
+        () => {}, // consumed in OnlineLobby
+        handleServerStateUpdate,
         handleStateSnapshot,
-        handleResyncRequested,
+        () => {},
       );
     }
-  }, [isOnlineGame, handleRemoteGameAction, handleStateSnapshot, handleResyncRequested, setGameCallbacks]);
+  }, [isOnlineGame, handleServerStateUpdate, handleStateSnapshot, setGameCallbacks]);
 
-  // Host: send state snapshot after EVERY action (for reliable sync)
+  // Game-over notification: the server doesn't emit GAME_OVER on its own yet,
+  // so the client watches its mirror engine for gameOver and tells the server.
+  // Any client can do this (server de-dupes on status check), but we limit it
+  // to the host to avoid duplicate analytics rows.
   useEffect(() => {
     if (!isOnlineGame || !isHost) return;
-
-    const gameStore = useGameStore.getState();
-    gameStore.setOnActionDispatched((action: GameAction) => {
-      const hash = useGameStore.getState().computeStateHash();
-      useMultiplayer.getState().sendGameAction(action, hash);
-
-      // Send full snapshot synchronously after EVERY action so clients always converge
-      // (engine dispatch is synchronous, so state is already settled)
-      const finalState = useGameStore.getState().gameState;
-      const finalHash = useGameStore.getState().computeStateHash();
-      if (finalState) {
-        useMultiplayer.getState().sendStateSnapshot(finalState, finalHash);
-      }
-
-      // Check for game over
-      const currentGameState = useGameStore.getState().gameState;
-      if (currentGameState?.gameOver && currentGameState.winner) {
-        const winner = currentGameState.winner;
-        const statsTracker = useGameStore.getState().engine?.getStatsTracker();
-        const playerSummaries = statsTracker
-          ? statsTracker.generateAllSummaries(currentGameState.players)
-          : undefined;
-        useMultiplayer.getState().sendGameOver(
-          winner.id,
-          winner.name,
-          {
-            players: currentGameState.players.map(p => ({
-              id: p.id,
-              name: p.name,
-              captainId: p.captain.id,
-              fame: p.fame,
-              credits: p.credits,
-              completedMissions: p.completedMissions.length,
-              hazardsInDeck: p.hazardsInDeck,
-              totalCardsPlayed: p.played.length,
-            })),
-            turn: currentGameState.turn,
-            playerSummaries,
-          }
-        );
-      }
-    });
-
-    return () => {
-      gameStore.setOnActionDispatched(null);
-    };
-  }, [isOnlineGame, isHost]);
-
-  // Non-host: set callback to send actions without hash (hash comes from host)
-  useEffect(() => {
-    if (!isOnlineGame || isHost) return;
-
-    const gameStore = useGameStore.getState();
-    gameStore.setOnActionDispatched((action: GameAction) => {
-      useMultiplayer.getState().sendGameAction(action);
-    });
-
-    return () => {
-      gameStore.setOnActionDispatched(null);
-    };
-  }, [isOnlineGame, isHost]);
+    if (!gameState?.gameOver || !gameState.winner) return;
+    const winner = gameState.winner;
+    const engine = useGameStore.getState().engine;
+    const statsTracker = engine?.getStatsTracker();
+    const playerSummaries = statsTracker
+      ? statsTracker.generateAllSummaries(gameState.players)
+      : undefined;
+    useMultiplayer.getState().sendGameOver(
+      winner.id,
+      winner.name,
+      {
+        players: gameState.players.map(p => ({
+          id: p.id,
+          name: p.name,
+          captainId: p.captain.id,
+          fame: p.fame,
+          credits: p.credits,
+          completedMissions: p.completedMissions.length,
+          hazardsInDeck: p.hazardsInDeck,
+          totalCardsPlayed: p.played.length,
+        })),
+        turn: gameState.turn,
+        playerSummaries,
+      },
+    );
+  }, [isOnlineGame, isHost, gameState?.gameOver, gameState?.winner]);
 
   // If we're on game screen but no game state, go back to menu
   if (screen === 'game' && !gameState) {

@@ -214,7 +214,13 @@ function ChatBox() {
 
 export interface OnlineLobbyProps {
   onBack: () => void;
-  onGameStart: (players: Array<{ id: number; name: string; captainId: string; networkId: string }>, myNetworkId: string) => void;
+  // initialState is the server's authoritative initial GameState. On normal
+  // start it's provided; on rejoin it's null (the snapshot arrives separately).
+  onGameStart: (
+    players: Array<{ id: number; name: string; captainId: string; networkId: string }>,
+    myNetworkId: string,
+    initialState: unknown | null,
+  ) => void;
 }
 
 export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
@@ -259,13 +265,13 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
     if (room?.status === 'playing') return;
 
     setGameCallbacks(
-      (players) => {
+      (players, initialState) => {
         if (playerId) {
           hasGameStartedRef.current = true;
-          onGameStart(players, playerId);
+          onGameStart(players, playerId, initialState);
         }
       },
-      () => {}, // Action handler set up in App.tsx
+      () => {}, // State update handler set up in App.tsx
       () => {}, // Snapshot handler set up in App.tsx
       () => {}, // Resync handler set up in App.tsx
     );
@@ -282,7 +288,9 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
         captainId: p.captainId || 'scrapper',
         networkId: p.id,
       }));
-      onGameStart(players, playerId);
+      // Rejoin path: no initial state yet — the server's STATE_SNAPSHOT
+      // (sent on rejoin) will load the authoritative state momentarily.
+      onGameStart(players, playerId, null);
     }
   }, [room, playerId, onGameStart]);
 
