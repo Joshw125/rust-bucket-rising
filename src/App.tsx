@@ -7,6 +7,30 @@ import { GameSetup } from './components/GameSetup';
 import { GameBoard } from './components/GameBoard';
 import { SimulationMode } from './components/SimulationMode';
 import { OnlineLobby } from './components/OnlineLobby';
+import { Toast } from './components/Toast';
+
+// Small badge pinned at the top-center during online games. Shows "Online"
+// normally and "Syncing…" while we're waiting for the server to broadcast
+// the new state after a local dispatch.
+function OnlineStatusBadge() {
+  const pending = useGameStore((s) => s.isOnlineDispatchPending);
+  return (
+    <div
+      className={`fixed top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-lg text-white text-sm z-50 transition-colors ${
+        pending ? 'bg-amber-600/80' : 'bg-green-600/80'
+      }`}
+    >
+      {pending ? (
+        <span className="flex items-center gap-2">
+          <span className="inline-block w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+          Syncing…
+        </span>
+      ) : (
+        <>🌐 Online Game</>
+      )}
+    </div>
+  );
+}
 import { useGameStore, useMultiplayer } from './hooks';
 import { CAPTAINS } from '@shared/data';
 import type { Captain, AIStrategy, GameAction, GameState } from '@shared/types';
@@ -265,29 +289,35 @@ function App() {
     setScreen('menu');
   }
 
+  // Compute the active screen element, then wrap everything with the global
+  // Toast so server errors surface from any screen (not just the lobby).
+  let screenEl: JSX.Element | null;
   switch (screen) {
     case 'menu':
-      return (
+      screenEl = (
         <MainMenu
           onNewGame={() => setScreen('setup')}
           onOnlinePlay={() => setScreen('online')}
           onSimulation={() => setScreen('simulation')}
         />
       );
+      break;
 
     case 'online':
-      return (
+      screenEl = (
         <OnlineLobby
           onBack={() => setScreen('menu')}
           onGameStart={handleOnlineGameStart}
         />
       );
+      break;
 
     case 'simulation':
-      return <SimulationMode onBack={() => setScreen('menu')} />;
+      screenEl = <SimulationMode onBack={() => setScreen('menu')} />;
+      break;
 
     case 'setup':
-      return (
+      screenEl = (
         <div>
           <GameSetup onStartGame={handleStartGame} />
           <button
@@ -298,9 +328,10 @@ function App() {
           </button>
         </div>
       );
+      break;
 
     case 'game':
-      return (
+      screenEl = (
         <div>
           <GameBoard isOnlineGame={isOnlineGame} localPlayerIndex={localPlayerIndex} />
           <button
@@ -318,17 +349,21 @@ function App() {
           >
             ← Quit
           </button>
-          {isOnlineGame && (
-            <div className="fixed top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-green-600/80 rounded-lg text-white text-sm z-50">
-              🌐 Online Game
-            </div>
-          )}
+          {isOnlineGame && <OnlineStatusBadge />}
         </div>
       );
+      break;
 
     default:
-      return null;
+      screenEl = null;
   }
+
+  return (
+    <>
+      {screenEl}
+      <Toast />
+    </>
+  );
 }
 
 export default App;

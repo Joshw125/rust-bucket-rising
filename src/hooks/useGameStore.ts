@@ -44,6 +44,12 @@ export interface GameStore {
   isOnlineGame: boolean;
   onlineDispatch: ((action: GameAction) => void) | null;
 
+  // Optimistic pending indicator. Set true when the local player fires an
+  // action in online mode; cleared when the server's state update arrives
+  // (or after a short safety timeout). Drives the "syncing…" UI hint so
+  // there's feedback that the click registered.
+  isOnlineDispatchPending: boolean;
+
   // Actions
   initGame: (players: Array<{ name: string; captain: Captain; isAI?: boolean; aiStrategy?: AIStrategy }>) => void;
   // Initialize an online game with server-provided initial state. The engine
@@ -126,6 +132,7 @@ export const useGameStore = create<GameStore>()(
     aiSpeed: 'normal' as const,
     isOnlineGame: false,
     onlineDispatch: null,
+    isOnlineDispatchPending: false,
 
     // Initialize a new local (hotseat/AI/offline) game
     initGame: (players) => {
@@ -204,6 +211,8 @@ export const useGameStore = create<GameStore>()(
       engine.loadState(newState);
       set((state) => {
         state.gameState = cloneGameState(engine.getState());
+        // Server responded — we're in sync again.
+        state.isOnlineDispatchPending = false;
       });
     },
 
@@ -220,6 +229,19 @@ export const useGameStore = create<GameStore>()(
       if (isOnlineGame) {
         if (onlineDispatch) {
           onlineDispatch(action);
+          // Mark pending; cleared in applyServerState (or auto-cleared below).
+          set((state) => {
+            state.isOnlineDispatchPending = true;
+          });
+          // Safety: if the server never responds (disconnect, etc.), don't
+          // leave the "syncing…" indicator on forever.
+          setTimeout(() => {
+            if (get().isOnlineDispatchPending) {
+              set((state) => {
+                state.isOnlineDispatchPending = false;
+              });
+            }
+          }, 5000);
         } else {
           console.warn('Online game missing onlineDispatch — action dropped:', action);
         }
