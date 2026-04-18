@@ -13,7 +13,7 @@ import type {
   MissionInstance,
   AIStrategy,
   PowerState,
-} from '../types.js';
+} from '../types/index.js';
 
 import { SYSTEMS, SYSTEM_CONFIG } from '../data/constants.js';
 

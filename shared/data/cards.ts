@@ -2,7 +2,7 @@
 // RUST BUCKET RISING - Card Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { StarterCard, ActionCard, HazardCard } from '../types.js';
+import type { StarterCard, ActionCard, HazardCard } from '../types/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Starting Cards (10 total per player)

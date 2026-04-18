@@ -2,7 +2,7 @@
 // RUST BUCKET RISING - Mission Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { Mission } from '../types.js';
+import type { Mission } from '../types/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Near Space Missions (Locations 1-2) - 2 Fame

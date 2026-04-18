@@ -9,7 +9,7 @@ import type {
   SimulationConfig,
   SimulationResults,
   EconomyStats,
-} from '../types.js';
+} from '../types/index.js';
 
 import { GameEngine } from './GameEngine.js';
 import { AIEngine } from './AIEngine.js';
