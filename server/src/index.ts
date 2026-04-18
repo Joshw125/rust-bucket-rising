@@ -132,15 +132,6 @@ function getRoomByCode(code: string): Room | undefined {
   return [...rooms.values()].find(r => r.code.toUpperCase() === code.toUpperCase());
 }
 
-function getClientByPlayerId(playerId: string): ConnectedClient | undefined {
-  for (const client of clients.values()) {
-    if (client.playerId === playerId) {
-      return client;
-    }
-  }
-  return undefined;
-}
-
 function touchRoom(room: Room): void {
   room.lastActivity = Date.now();
 }
@@ -162,7 +153,6 @@ function createRoom(hostId: string, hostName: string): Room {
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     status: 'lobby',
     gameState: null,
-    stateHash: null,
     lastActivity: now,
     createdAt: now,
   };
@@ -281,12 +271,19 @@ function handleJoinRoom(ws: WebSocket, client: ConnectedClient, roomCode: string
       // Send full room state to the rejoining player
       send(ws, { type: 'ROOM_JOINED', room, playerId: disconnectedPlayer.id });
 
-      // If we have a stored game state snapshot, send it for resync
-      if (room.gameState) {
+      // Send the current authoritative state on rejoin so the client can render.
+      const engine = roomEngines.get(room.id);
+      if (engine) {
+        send(ws, {
+          type: 'STATE_SNAPSHOT',
+          snapshot: engine.getState(),
+          stateHash: '',
+        });
+      } else if (room.gameState) {
         send(ws, {
           type: 'STATE_SNAPSHOT',
           snapshot: room.gameState,
-          stateHash: room.stateHash || '',
+          stateHash: '',
         });
       }
 
@@ -421,11 +418,18 @@ function handleRejoinAs(ws: WebSocket, client: ConnectedClient, roomCode: string
 
   send(ws, { type: 'ROOM_JOINED', room, playerId: targetPlayer.id });
 
-  if (room.gameState) {
+  const engineForRejoin = roomEngines.get(room.id);
+  if (engineForRejoin) {
+    send(ws, {
+      type: 'STATE_SNAPSHOT',
+      snapshot: engineForRejoin.getState(),
+      stateHash: '',
+    });
+  } else if (room.gameState) {
     send(ws, {
       type: 'STATE_SNAPSHOT',
       snapshot: room.gameState,
-      stateHash: room.stateHash || '',
+      stateHash: '',
     });
   }
 
@@ -614,18 +618,6 @@ function handleGameAction(ws: WebSocket, client: ConnectedClient, action: unknow
   });
 }
 
-// Phase 2+: server is authoritative, so client-sent snapshots are no longer
-// needed or trusted. We keep the handler as a silent no-op to avoid errors
-// from any in-flight legacy clients (though a freshly deployed client should
-// never send this).
-function handleStateSnapshot(_ws: WebSocket, client: ConnectedClient, _snapshot: unknown, _stateHash: string): void {
-  if (!client.roomId) return;
-  const room = rooms.get(client.roomId);
-  if (!room) return;
-  touchRoom(room);
-  // intentionally drop the payload
-}
-
 function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
   if (!client.roomId) return;
 
@@ -634,8 +626,7 @@ function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
 
   touchRoom(room);
 
-  // Phase 2+: always serve the authoritative state directly from the engine.
-  // No more asking the host — the server IS the host.
+  // Server owns the authoritative state. Serve it from the engine directly.
   const engine = roomEngines.get(room.id);
   if (engine) {
     send(ws, {
@@ -647,26 +638,8 @@ function handleRequestResync(ws: WebSocket, client: ConnectedClient): void {
     return;
   }
 
-  // Fallback: if engine is missing for some reason, fall back to last-known
-  // stored state (shouldn't happen in practice).
-  if (room.gameState) {
-    send(ws, {
-      type: 'STATE_SNAPSHOT',
-      snapshot: room.gameState,
-      stateHash: '',
-    });
-    return;
-  }
-
-  // Last resort: ask the host (legacy path)
-  const hostClient = getClientByPlayerId(room.hostId);
-  if (hostClient) {
-    send(hostClient.ws, {
-      type: 'RESYNC_REQUESTED',
-      playerId: client.playerId,
-    });
-    console.log(`Resync requested by ${client.playerId}, asking host ${room.hostId}`);
-  }
+  // Engine is gone (room in a weird state) — tell the client, they can decide.
+  send(ws, { type: 'ERROR', message: 'Game state unavailable; try rejoining.' });
 }
 
 function handleGameOver(ws: WebSocket, client: ConnectedClient, winnerId: number, winnerName: string, stats: unknown): void {
@@ -749,9 +722,6 @@ function handleMessage(ws: WebSocket, client: ConnectedClient, data: string): vo
         break;
       case 'GAME_ACTION':
         handleGameAction(ws, client, message.action);
-        break;
-      case 'STATE_SNAPSHOT':
-        handleStateSnapshot(ws, client, message.snapshot, message.stateHash);
         break;
       case 'REQUEST_RESYNC':
         handleRequestResync(ws, client);

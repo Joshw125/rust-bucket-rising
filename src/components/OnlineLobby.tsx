@@ -273,7 +273,6 @@ export function OnlineLobby({ onBack, onGameStart }: OnlineLobbyProps) {
       },
       () => {}, // State update handler set up in App.tsx
       () => {}, // Snapshot handler set up in App.tsx
-      () => {}, // Resync handler set up in App.tsx
     );
   }, [setGameCallbacks, onGameStart, playerId, room?.status]);
 

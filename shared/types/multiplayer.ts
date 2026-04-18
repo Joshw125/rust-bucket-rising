@@ -25,8 +25,7 @@ export interface Room {
   players: RoomPlayer[];
   maxPlayers: number;
   status: 'lobby' | 'playing' | 'finished';
-  gameState: unknown | null; // GameState when playing
-  stateHash: string | null; // Latest state hash (legacy; removed in Phase 3)
+  gameState: unknown | null; // GameState when playing (stored by server for rejoin)
   lastActivity: number; // Timestamp of last message (for server-side cleanup)
   createdAt: number;
 }
@@ -46,9 +45,6 @@ export type ClientMessage =
   // and broadcasts the resulting state. `action` is typed as unknown here
   // (server casts to GameAction) to avoid a circular import.
   | { type: 'GAME_ACTION'; action: unknown }
-  // STATE_SNAPSHOT from client is legacy (Phase 2+: server owns state).
-  // Still accepted to avoid breaking older clients mid-rollout, but ignored.
-  | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
   | { type: 'REQUEST_RESYNC' }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string; stats: unknown }
   | { type: 'CHAT'; message: string }
@@ -82,9 +78,9 @@ export type ServerMessage =
   // dispatch. `fromPlayerIndex` is advisory (for animations/logs).
   // `action` is echoed so clients can render "what just happened" cues.
   | { type: 'GAME_STATE_UPDATE'; state: unknown; action: unknown; fromPlayerIndex: number }
-  // STATE_SNAPSHOT: sent on reconnect/resync. Client overwrites local state.
+  // STATE_SNAPSHOT: sent on rejoin/resync. Client overwrites local state.
+  // (stateHash kept in the payload for wire back-compat; receivers ignore it.)
   | { type: 'STATE_SNAPSHOT'; snapshot: unknown; stateHash: string }
-  | { type: 'RESYNC_REQUESTED'; playerId: string }
   | { type: 'GAME_OVER'; winnerId: number; winnerName: string }
   | { type: 'CHAT_MESSAGE'; playerId: string; playerName: string; message: string }
   | { type: 'REJOIN_OPTIONS'; roomCode: string; disconnectedPlayers: Array<{ name: string; captainId: string | null }> }

@@ -2116,8 +2116,8 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
     ? players[localPlayerIndex]
     : currentPlayer;
 
-  // Note: multiplayer sync callback (onActionDispatched) is set up in App.tsx
-  // Host sends actions with state hash; non-host sends without hash.
+  // Note: online-mode action routing (dispatch → server) is wired in App.tsx
+  // via initOnlineGame. This component stays agnostic to local vs. online.
 
   // Animation refs
   const playedPileRef = useRef<HTMLDivElement>(null);

@@ -128,7 +128,6 @@ function App() {
   const initGame = useGameStore((s) => s.initGame);
   const initOnlineGame = useGameStore((s) => s.initOnlineGame);
   const applyServerState = useGameStore((s) => s.applyServerState);
-  const loadSnapshot = useGameStore((s) => s.loadSnapshot);
   const gameState = useGameStore((s) => s.gameState);
   const setGameCallbacks = useMultiplayer((s) => s.setGameCallbacks);
   const playerId = useMultiplayer((s) => s.playerId);
@@ -200,7 +199,6 @@ function App() {
       () => {}, // onGameStart already consumed by OnlineLobby → this handler
       handleServerStateUpdate,
       handleStateSnapshot,
-      () => {}, // resync request: noop (server no longer asks host)
     );
   };
 
@@ -212,16 +210,11 @@ function App() {
     [applyServerState],
   );
 
-  // Full-state snapshot (on resync/rejoin). Behaves identically to state update.
+  // Full-state snapshot (on resync/rejoin). Same semantics as a regular
+  // state update — server sends the authoritative state, we replace ours.
   const handleStateSnapshot = useCallback((snapshot: unknown, _stateHash: string) => {
-    // In online mode, the server is authoritative — skip loadSnapshot's
-    // grace-period/preservation logic and just install the state directly.
-    if (useGameStore.getState().isOnlineGame) {
-      applyServerState(snapshot as GameState);
-    } else {
-      loadSnapshot(snapshot as GameState, localPlayerIndex ?? undefined);
-    }
-  }, [applyServerState, loadSnapshot, localPlayerIndex]);
+    applyServerState(snapshot as GameState);
+  }, [applyServerState]);
 
   // Keep callbacks fresh as dependencies change
   useEffect(() => {
@@ -230,7 +223,6 @@ function App() {
         () => {}, // consumed in OnlineLobby
         handleServerStateUpdate,
         handleStateSnapshot,
-        () => {},
       );
     }
   }, [isOnlineGame, handleServerStateUpdate, handleStateSnapshot, setGameCallbacks]);
