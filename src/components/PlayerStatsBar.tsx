@@ -167,6 +167,7 @@ interface ExpandedSystemPanelProps {
   player: Player;
   isCurrentPlayer: boolean;
   onActivate?: (abilityIndex: number) => void;
+  allPlayers?: Player[];
 }
 
 // Hover preview component for installed cards - portaled to body to escape sidebar transform
@@ -217,7 +218,7 @@ function GearPreview({
   );
 }
 
-export function ExpandedSystemPanel({ system, player, isCurrentPlayer, onActivate }: ExpandedSystemPanelProps) {
+export function ExpandedSystemPanel({ system, player, isCurrentPlayer, onActivate, allPlayers }: ExpandedSystemPanelProps) {
   const config = SYSTEM_CONFIG[system];
   const currentPower = player.currentPower[system];
   const usedAbilities = player.usedSystemAbilities?.[system] ?? [];
@@ -307,7 +308,13 @@ export function ExpandedSystemPanel({ system, player, isCurrentPlayer, onActivat
       <div className="divide-y divide-slate-800">
         {config.abilities.map((ability, idx) => {
           const isUsed = usedAbilities[idx] ?? false;
-          const canActivate = isCurrentPlayer && currentPower >= ability.cost && !isUsed;
+          // Check if ability requires targets and none are available
+          const hasValidTargets = !ability.requiresTarget || !allPlayers || (
+            ability.targetType === 'playerAtLocation'
+              ? allPlayers.some(p => p.id !== player.id && p.location === player.location)
+              : allPlayers.some(p => p.id !== player.id)
+          );
+          const canActivate = isCurrentPlayer && currentPower >= ability.cost && !isUsed && hasValidTargets;
 
           return (
             <div

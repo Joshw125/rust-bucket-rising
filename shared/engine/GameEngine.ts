@@ -19,7 +19,7 @@ import type {
   MissionPools,
   ActionCard,
   HazardCard,
-} from '../types.js';
+} from '../types/index.js';
 
 import {
   VICTORY_THRESHOLD,
@@ -1406,18 +1406,42 @@ export class GameEngine {
       }
     }
 
-    // Give hazard (single target - needs player selection)
+    // Give hazard (single target - needs player selection, must be at same location)
     if (effectData.giveHazard) {
-      // Store bonus data for resolution
-      this.state.pendingAction = {
-        type: 'targetPlayer',
-        playerId: player.id,
-        data: {
-          cardTitle: card.title,
-          bonusIfHadHazard: effectData.bonusIfHadHazard,
-          moveOther: effectData.moveOther,
-        },
-      };
+      const validTargets = this.state.players.filter(p =>
+        p.id !== player.id && p.location === player.location
+      );
+      if (validTargets.length > 0) {
+        this.state.pendingAction = {
+          type: 'targetPlayer',
+          playerId: player.id,
+          data: {
+            cardTitle: card.title,
+            bonusIfHadHazard: effectData.bonusIfHadHazard,
+            moveOther: effectData.moveOther,
+            source: 'giveHazardAtLocation',
+            targetPlayerIds: validTargets.map(p => p.id),
+          },
+        };
+      } else {
+        this.log(`  No targets at location for hazard`, 'info');
+      }
+    }
+
+    // Give hazard anywhere (Overload Conduit - can target any player)
+    if (effectData.giveHazardAnywhere) {
+      const validTargets = this.state.players.filter(p => p.id !== player.id);
+      if (validTargets.length > 0) {
+        this.state.pendingAction = {
+          type: 'targetPlayer',
+          playerId: player.id,
+          data: {
+            cardTitle: card.title,
+            source: 'giveHazardAnywhere',
+            targetPlayerIds: validTargets.map(p => p.id),
+          },
+        };
+      }
     }
 
     // Move other player (Mag-Leash: when no giveHazard, standalone moveOther)
@@ -2342,6 +2366,25 @@ export class GameEngine {
       cost += 1;
     }
 
+    // For giveHazardAtLocation, validate targets BEFORE spending power
+    if (ability.effect === 'giveHazardAtLocation') {
+      if (targetPlayerId !== undefined) {
+        const target = this.getPlayer(targetPlayerId);
+        if (!target || target.location !== player.location) {
+          this.log(`No valid target at location ${player.location}`, 'info');
+          return false;
+        }
+      } else {
+        const validTargets = this.state.players.filter(p =>
+          p.id !== player.id && p.location === player.location
+        );
+        if (validTargets.length === 0) {
+          this.log(`No valid targets at location ${player.location}`, 'info');
+          return false;
+        }
+      }
+    }
+
     // Broker captain ability: if ability was already used, this is the double-activate
     if (player.usedSystemAbilities[system][abilityIndex] &&
         player.captain.ability.doubleActivate && !player.usedCaptainAbility) {
@@ -2363,28 +2406,18 @@ export class GameEngine {
     switch (ability.effect) {
       case 'giveHazardAtLocation':
         if (targetPlayerId !== undefined) {
-          const target = this.getPlayer(targetPlayerId);
-          if (target && target.location === player.location) {
-            this.giveHazard(player, target);
-          }
+          const target = this.getPlayer(targetPlayerId)!;
+          this.giveHazard(player, target);
         } else {
-          // Need to select a target - set pending action
-          // Check if there are any valid targets first
-          const validTargets = this.state.players.filter(p =>
-            p.id !== player.id && p.location === player.location
-          );
-          if (validTargets.length > 0) {
-            this.state.pendingAction = {
-              type: 'targetPlayer',
-              playerId: player.id,
-              data: {
-                cardTitle: `Weapons ${cost}⚡ (at location)`,
-                source: 'giveHazardAtLocation'
-              },
-            };
-          } else {
-            this.log(`No valid targets at location ${player.location}`, 'info');
-          }
+          // Valid targets already verified in pre-check above
+          this.state.pendingAction = {
+            type: 'targetPlayer',
+            playerId: player.id,
+            data: {
+              cardTitle: `Weapons ${cost}⚡ (at location)`,
+              source: 'giveHazardAtLocation'
+            },
+          };
         }
         break;
 
@@ -2685,7 +2718,11 @@ export class GameEngine {
               return true; // Chained into interaction pending action
             }
 
-            // Default behavior: giveHazard
+            // Default behavior: giveHazard — validate location for non-anywhere sources
+            if (pending.data?.source !== 'giveHazardAnywhere' && target.location !== player.location) {
+              this.log(`Target not at same location`, 'info');
+              break;
+            }
             const targetHadHazard = target.hand.some(c => c.type === 'hazard');
             this.giveHazard(player, target);
 
@@ -2702,7 +2739,7 @@ export class GameEngine {
               }
             }
 
-            // Chain moveOther after giveHazard (Mag-Leash)
+            // Chain moveOther after giveHazard (Mag-Leash) — only the hazard recipient
             if (pending.data?.moveOther) {
               this.state.pendingAction = {
                 type: 'moveOtherPlayer',
@@ -2710,7 +2747,7 @@ export class GameEngine {
                 data: {
                   cardTitle: pending.data.cardTitle,
                   amount: pending.data.moveOther,
-                  targetPlayerIds: this.state.players.filter(p => p.id !== player.id).map(p => p.id),
+                  targetPlayerIds: [target.id],
                 },
               };
               return true;

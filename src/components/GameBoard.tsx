@@ -2434,10 +2434,10 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {/* Ship Systems */}
               <div className="space-y-2">
                 <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Ship Systems</h3>
-                <ExpandedSystemPanel system="weapons" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('weapons' as SystemType, idx)} />
-                <ExpandedSystemPanel system="computers" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('computers' as SystemType, idx)} />
-                <ExpandedSystemPanel system="engines" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('engines' as SystemType, idx)} />
-                <ExpandedSystemPanel system="logistics" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('logistics' as SystemType, idx)} />
+                <ExpandedSystemPanel system="weapons" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('weapons' as SystemType, idx)} allPlayers={gameState.players} />
+                <ExpandedSystemPanel system="computers" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('computers' as SystemType, idx)} allPlayers={gameState.players} />
+                <ExpandedSystemPanel system="engines" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('engines' as SystemType, idx)} allPlayers={gameState.players} />
+                <ExpandedSystemPanel system="logistics" player={localPlayer} isCurrentPlayer={isMyTurn} onActivate={(idx) => activateSystem('logistics' as SystemType, idx)} allPlayers={gameState.players} />
               </div>
 
               {/* Completed Missions & Trophies */}
@@ -2776,6 +2776,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               player={localPlayer}
               isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('weapons' as SystemType, idx)}
+              allPlayers={gameState.players}
             />
 
             {/* Computers */}
@@ -2784,6 +2785,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               player={localPlayer}
               isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('computers' as SystemType, idx)}
+              allPlayers={gameState.players}
             />
 
             {/* Engines */}
@@ -2792,6 +2794,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               player={localPlayer}
               isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('engines' as SystemType, idx)}
+              allPlayers={gameState.players}
             />
 
             {/* Logistics */}
@@ -2800,6 +2803,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               player={localPlayer}
               isCurrentPlayer={isMyTurn}
               onActivate={(idx) => activateSystem('logistics' as SystemType, idx)}
+              allPlayers={gameState.players}
             />
           </div>
 
