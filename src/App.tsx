@@ -8,6 +8,7 @@ import { GameBoard } from './components/GameBoard';
 import { SimulationMode } from './components/SimulationMode';
 import { OnlineLobby } from './components/OnlineLobby';
 import { Toast } from './components/Toast';
+import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 
 // Small badge pinned at the top-center during online games. Shows "Online"
 // normally and "Syncing…" while we're waiting for the server to broadcast
@@ -42,11 +43,13 @@ import type { Captain, AIStrategy, GameAction, GameState } from '@shared/types';
 function MainMenu({
   onNewGame,
   onOnlinePlay,
-  onSimulation
+  onSimulation,
+  onAnalytics,
 }: {
   onNewGame: () => void;
   onOnlinePlay: () => void;
   onSimulation: () => void;
+  onAnalytics: () => void;
 }) {
   return (
     <div className="min-h-screen relative text-white flex items-center justify-center p-6">
@@ -100,6 +103,13 @@ function MainMenu({
             Simulation Mode
           </button>
           <button
+            onClick={onAnalytics}
+            className="w-full py-3 rounded-xl font-semibold text-base transition-all hover:scale-[1.01] text-amber-200
+                       bg-slate-800/80 hover:bg-slate-700/80 border border-amber-500/30"
+          >
+            📊 Analytics
+          </button>
+          <button
             className="w-full py-4 rounded-xl font-bold text-xl transition-all
                        bg-slate-800/70 text-slate-500 border border-slate-700/50 cursor-not-allowed"
             disabled
@@ -143,7 +153,7 @@ function MainMenu({
 // Main App Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Screen = 'menu' | 'setup' | 'game' | 'simulation' | 'online';
+type Screen = 'menu' | 'setup' | 'game' | 'simulation' | 'online' | 'analytics';
 
 function App() {
   const [screen, setScreen] = useState<Screen>('menu');
@@ -299,6 +309,7 @@ function App() {
           onNewGame={() => setScreen('setup')}
           onOnlinePlay={() => setScreen('online')}
           onSimulation={() => setScreen('simulation')}
+          onAnalytics={() => setScreen('analytics')}
         />
       );
       break;
@@ -314,6 +325,10 @@ function App() {
 
     case 'simulation':
       screenEl = <SimulationMode onBack={() => setScreen('menu')} />;
+      break;
+
+    case 'analytics':
+      screenEl = <AnalyticsDashboard onBack={() => setScreen('menu')} />;
       break;
 
     case 'setup':

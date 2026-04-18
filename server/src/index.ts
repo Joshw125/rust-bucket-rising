@@ -42,6 +42,157 @@ try {
   console.warn('Could not create data directory:', e);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats Aggregation (/stats endpoint)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RecentGame {
+  winnerName: string;
+  players: Array<{ name: string; captainId: string | null; isHost?: boolean }> | undefined;
+  duration: number | undefined;
+  timestamp: number | undefined;
+}
+
+interface CaptainStats {
+  captainId: string;
+  plays: number;
+  wins: number;
+  winRate: number; // 0-1
+  avgFame: number | null;
+  avgMissions: number | null;
+}
+
+interface AggregatedStats {
+  totalGamesStarted: number;
+  totalGamesFinished: number;
+  totalAbandoned: number; // started but never ended
+  totalRejoins: number;
+  avgDurationMs: number | null;
+  avgTurns: number | null;
+  avgWinningFame: number | null;
+  playerCountDistribution: Record<string, number>; // "2" -> N, "3" -> N, "4" -> N
+  captainStats: CaptainStats[]; // sorted by plays desc
+  recentGames: RecentGame[]; // most-recent first
+  generatedAt: number;
+}
+
+function emptyStats(): AggregatedStats {
+  return {
+    totalGamesStarted: 0,
+    totalGamesFinished: 0,
+    totalAbandoned: 0,
+    totalRejoins: 0,
+    avgDurationMs: null,
+    avgTurns: null,
+    avgWinningFame: null,
+    playerCountDistribution: {},
+    captainStats: [],
+    recentGames: [],
+    generatedAt: Date.now(),
+  };
+}
+
+function computeStats(events: Array<Record<string, unknown>>): AggregatedStats {
+  const starts = events.filter(e => e.event === 'game_start');
+  const ends = events.filter(e => e.event === 'game_end');
+  const rejoins = events.filter(e => e.event === 'player_rejoin' || e.event === 'player_rejoin_as');
+
+  // Average duration (game_end entries that have a duration)
+  const durations = ends
+    .map(e => e.duration)
+    .filter((d): d is number => typeof d === 'number' && d > 0);
+  const avgDurationMs = durations.length
+    ? durations.reduce((a, b) => a + b, 0) / durations.length
+    : null;
+
+  // Pull turn count and winner fame from end-game stats payload (optional)
+  const turns: number[] = [];
+  const winningFames: number[] = [];
+  for (const end of ends) {
+    const stats = end.stats as Record<string, unknown> | undefined;
+    if (stats && typeof stats.turn === 'number') turns.push(stats.turn);
+    if (stats && Array.isArray(stats.players)) {
+      const playersArr = stats.players as Array<Record<string, unknown>>;
+      const winnerId = typeof end.winnerId === 'number' ? end.winnerId : null;
+      if (winnerId !== null) {
+        const winner = playersArr.find(p => p.id === winnerId);
+        if (winner && typeof winner.fame === 'number') winningFames.push(winner.fame);
+      }
+    }
+  }
+  const avgTurns = turns.length ? turns.reduce((a, b) => a + b, 0) / turns.length : null;
+  const avgWinningFame = winningFames.length
+    ? winningFames.reduce((a, b) => a + b, 0) / winningFames.length
+    : null;
+
+  // Player count distribution (from game_start events' playerCount)
+  const playerCountDistribution: Record<string, number> = {};
+  for (const start of starts) {
+    const pc = start.playerCount;
+    if (typeof pc === 'number') {
+      const key = String(pc);
+      playerCountDistribution[key] = (playerCountDistribution[key] ?? 0) + 1;
+    }
+  }
+
+  // Captain stats: accumulate plays and wins from game_end events.
+  // (game_start also has captainIds but game_end is more reliable because
+  // we can correlate wins there.)
+  const captainAgg = new Map<string, { plays: number; wins: number; fames: number[]; missions: number[] }>();
+  for (const end of ends) {
+    const stats = end.stats as Record<string, unknown> | undefined;
+    const winnerId = typeof end.winnerId === 'number' ? end.winnerId : null;
+    if (!stats || !Array.isArray(stats.players)) continue;
+    for (const p of stats.players as Array<Record<string, unknown>>) {
+      const captainId = typeof p.captainId === 'string' ? p.captainId : null;
+      if (!captainId) continue;
+      const entry = captainAgg.get(captainId) ?? { plays: 0, wins: 0, fames: [], missions: [] };
+      entry.plays += 1;
+      if (p.id === winnerId) entry.wins += 1;
+      if (typeof p.fame === 'number') entry.fames.push(p.fame);
+      if (typeof p.completedMissions === 'number') entry.missions.push(p.completedMissions);
+      captainAgg.set(captainId, entry);
+    }
+  }
+  const captainStats: CaptainStats[] = Array.from(captainAgg.entries())
+    .map(([captainId, e]) => ({
+      captainId,
+      plays: e.plays,
+      wins: e.wins,
+      winRate: e.plays > 0 ? e.wins / e.plays : 0,
+      avgFame: e.fames.length ? e.fames.reduce((a, b) => a + b, 0) / e.fames.length : null,
+      avgMissions: e.missions.length
+        ? e.missions.reduce((a, b) => a + b, 0) / e.missions.length
+        : null,
+    }))
+    .sort((a, b) => b.plays - a.plays);
+
+  // Recent games (most recent first, last 15)
+  const recentGames: RecentGame[] = ends
+    .slice(-15)
+    .reverse()
+    .map(e => ({
+      winnerName: typeof e.winnerName === 'string' ? e.winnerName : 'Unknown',
+      players: Array.isArray(e.players) ? (e.players as RecentGame['players']) : undefined,
+      duration: typeof e.duration === 'number' ? e.duration : undefined,
+      timestamp: typeof e.timestamp === 'number' ? e.timestamp : undefined,
+    }));
+
+  return {
+    totalGamesStarted: starts.length,
+    totalGamesFinished: ends.length,
+    totalAbandoned: Math.max(0, starts.length - ends.length),
+    totalRejoins: rejoins.length,
+    avgDurationMs,
+    avgTurns,
+    avgWinningFame,
+    playerCountDistribution,
+    captainStats,
+    recentGames,
+    generatedAt: Date.now(),
+  };
+}
+
 function logAnalytics(event: Record<string, unknown>): void {
   try {
     const entry = JSON.stringify({ ...event, timestamp: Date.now() }) + '\n';
@@ -772,27 +923,17 @@ const server = createServer((req, res) => {
   if (req.url === '/stats') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     try {
-      if (existsSync(GAMES_LOG)) {
-        const lines = readFileSync(GAMES_LOG, 'utf-8').trim().split('\n').filter(Boolean);
-        const events = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        const starts = events.filter((e: any) => e.event === 'game_start');
-        const ends = events.filter((e: any) => e.event === 'game_end');
-        const rejoins = events.filter((e: any) => e.event === 'player_rejoin');
-        res.end(JSON.stringify({
-          totalGamesStarted: starts.length,
-          totalGamesFinished: ends.length,
-          totalRejoins: rejoins.length,
-          recentGames: ends.slice(-10).map((e: any) => ({
-            winnerName: e.winnerName,
-            players: e.players,
-            duration: e.duration,
-            timestamp: e.timestamp,
-          })),
-        }));
-      } else {
-        res.end(JSON.stringify({ totalGamesStarted: 0, totalGamesFinished: 0, totalRejoins: 0, recentGames: [] }));
+      if (!existsSync(GAMES_LOG)) {
+        res.end(JSON.stringify(emptyStats()));
+        return;
       }
+      const lines = readFileSync(GAMES_LOG, 'utf-8').trim().split('\n').filter(Boolean);
+      const events = lines
+        .map(l => { try { return JSON.parse(l); } catch { return null; } })
+        .filter(Boolean) as Array<Record<string, unknown>>;
+      res.end(JSON.stringify(computeStats(events)));
     } catch (e) {
+      console.error('Stats endpoint error:', e);
       res.end(JSON.stringify({ error: 'Failed to read stats' }));
     }
     return;
