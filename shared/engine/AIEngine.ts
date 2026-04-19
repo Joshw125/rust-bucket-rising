@@ -100,6 +100,14 @@ export class AIEngine {
     this.weights = STRATEGY_WEIGHTS[strategy];
   }
 
+  // Mirrors the engine's own check: a hazard is "active" when it's in hand.
+  // Used by the scorers to avoid proposing actions the engine would reject,
+  // which previously caused infinite dispatch loops (AI kept proposing the
+  // same MOVE / COMPLETE_MISSION, engine kept returning false).
+  private playerHasActiveHazard(player: Player, hazardId: string): boolean {
+    return player.hand.some(c => c.type === 'hazard' && c.id === hazardId);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Main Decision Method
   // ─────────────────────────────────────────────────────────────────────────
@@ -430,6 +438,11 @@ export class AIEngine {
   private scorePlayCardActions(state: GameState, player: Player): ScoredAction[] {
     const actions: ScoredAction[] = [];
 
+    // Failsafe Lockdown: max 2 cards played per turn.
+    if (this.playerHasActiveHazard(player, 'failsafe-lockdown') && player.cardsPlayedThisTurn >= 2) {
+      return actions;
+    }
+
     for (const card of player.hand) {
       if (card.type === 'hazard') continue; // Can't play hazards
 
@@ -580,6 +593,12 @@ export class AIEngine {
 
   private scoreMovementActions(state: GameState, player: Player): ScoredAction[] {
     const actions: ScoredAction[] = [];
+
+    // Thruster Jam: max 1 move per turn — engine rejects additional moves,
+    // which would loop if we kept proposing them.
+    if (this.playerHasActiveHazard(player, 'thruster-jam') && player.movesThisTurn >= 1) {
+      return actions;
+    }
 
     // Check if we have free moves or can spend engine power
     const canMoveForward = player.location < 6;
@@ -818,6 +837,14 @@ export class AIEngine {
   private scoreInstallActions(_state: GameState, player: Player): ScoredAction[] {
     const actions: ScoredAction[] = [];
 
+    // Rogue AI Fragment / Corrosive Spores: can't install while active.
+    if (
+      this.playerHasActiveHazard(player, 'rogue-ai-fragment') ||
+      this.playerHasActiveHazard(player, 'corrosive-spores')
+    ) {
+      return actions;
+    }
+
     for (const card of player.hand) {
       if (card.type !== 'action') continue;
 
@@ -858,8 +885,22 @@ export class AIEngine {
   }
 
   private canCompleteMission(player: Player, mission: MissionInstance): boolean {
+    // Corrupted Nav Chip: missions blocked entirely while this is in hand.
+    if (this.playerHasActiveHazard(player, 'corrupted-nav-chip')) return false;
+
+    // Warrant Issued: missions cost +2 credits to complete.
+    if (this.playerHasActiveHazard(player, 'warrant-issued') && player.credits < 2) {
+      return false;
+    }
+
+    // Power requirements, distributing missionDiscount as a total-budget credit.
+    let discountRemaining = player.missionDiscount ?? 0;
     for (const sys of SYSTEMS) {
-      const required = mission.requirements[sys] ?? 0;
+      const base = mission.requirements[sys] ?? 0;
+      if (base <= 0) continue;
+      const discountForThis = Math.min(base, discountRemaining);
+      discountRemaining -= discountForThis;
+      const required = base - discountForThis;
       if (required > 0 && player.currentPower[sys] < required) {
         return false;
       }

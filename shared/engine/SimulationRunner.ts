@@ -170,6 +170,11 @@ export class SimulationRunner {
       // Let AI make decisions until turn ends
       let actionsThisTurn = 0;
       const maxActionsPerTurn = 50; // Safety limit
+      // Guard: if the engine rejects two dispatches in a row, the AI is
+      // stuck in a loop (usually: scored an action the engine gates behind
+      // a hazard check the AI didn't model). Force end turn.
+      let consecutiveRejections = 0;
+      const MAX_REJECTIONS = 2;
 
       while (actionsThisTurn < maxActionsPerTurn) {
         const action = aiEngine.decideAction(gameState, currentPlayer);
@@ -182,7 +187,19 @@ export class SimulationRunner {
           break;
         }
 
-        engine.dispatch(action);
+        const ok = engine.dispatch(action);
+        if (!ok) {
+          consecutiveRejections++;
+          if (consecutiveRejections >= MAX_REJECTIONS) {
+            // AI stuck proposing invalid actions — bail to END_TURN.
+            engine.dispatch({ type: 'END_TURN' });
+            break;
+          }
+          // Don't count as a productive action; skip state refresh / logging
+          // and loop to give the AI another chance.
+          continue;
+        }
+        consecutiveRejections = 0;
         gameState = engine.getState();
 
         if (captureLog) {
