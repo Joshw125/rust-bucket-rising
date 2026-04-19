@@ -108,6 +108,58 @@ export class AIEngine {
     return player.hand.some(c => c.type === 'hazard' && c.id === hazardId);
   }
 
+  // Per-system power shortfall for a specific mission — e.g. "needs 1 more
+  // computers". Only positive deficits are included. Respects missionDiscount
+  // by distributing it across the systems that need the most (greedy — not
+  // optimal, but close enough for scoring).
+  private getMissionPowerDeficit(player: Player, mission: MissionInstance): Partial<PowerState> {
+    const deficit: Partial<PowerState> = {};
+    let discount = player.missionDiscount ?? 0;
+    // Greedily apply discount to largest gap first
+    const gaps = SYSTEMS
+      .map(sys => ({ sys, gap: Math.max(0, (mission.requirements[sys] ?? 0) - player.currentPower[sys]) }))
+      .filter(g => g.gap > 0)
+      .sort((a, b) => b.gap - a.gap);
+    for (const g of gaps) {
+      const applied = Math.min(g.gap, discount);
+      discount -= applied;
+      const remaining = g.gap - applied;
+      if (remaining > 0) deficit[g.sys] = remaining;
+    }
+    return deficit;
+  }
+
+  // Aggregate deficit across the best mission target (current location or
+  // a close one). Returns an empty object if nothing is targetable.
+  // Used by scorers to boost actions that fill specific shortfalls.
+  private getActiveDeficit(state: GameState, player: Player): Partial<PowerState> {
+    const here = this.getMissionAtLocation(state, player.location);
+    if (here && !this.canCompleteMission(player, here)) {
+      return this.getMissionPowerDeficit(player, here);
+    }
+    const target = this.findBestMissionTarget(state, player);
+    if (target && !this.canCompleteMission(player, target.mission)) {
+      return this.getMissionPowerDeficit(player, target.mission);
+    }
+    return {};
+  }
+
+  // How many units of a card's fixed power allocation actually CLOSE a
+  // deficit we care about. Each unit of "right" power is worth more than a
+  // unit of generic power.
+  private powerMatchBonus(power: Partial<PowerState> | undefined, deficit: Partial<PowerState>): number {
+    if (!power) return 0;
+    let matched = 0;
+    for (const sys of SYSTEMS) {
+      const provided = power[sys] ?? 0;
+      const needed = deficit[sys] ?? 0;
+      if (provided > 0 && needed > 0) {
+        matched += Math.min(provided, needed);
+      }
+    }
+    return matched;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Main Decision Method
   // ─────────────────────────────────────────────────────────────────────────
@@ -476,6 +528,15 @@ export class AIEngine {
     const nearMission = missionHere || (bestTarget && Math.abs(player.location - bestTarget.location) <= 2);
     const powerMultiplier = nearMission ? 3 : 1.5; // Triple power value when near a mission
 
+    // What specific systems are we short on for our current target mission?
+    // Used to boost cards that fill the exact gap rather than adding generic
+    // power.  E.g. if we're 1 computers short, a card giving `computers: 1`
+    // should score far higher than one giving `weapons: 1`.
+    const deficit = this.getActiveDeficit(state, player);
+    // Each unit of "right" power beyond generic scoring is worth this much.
+    // Large bonus — closing a deficit enables completing a mission (big fame).
+    const DEFICIT_BONUS_PER_MATCH = 15;
+
     if (card.type === 'starter') {
       const starter = card as CardInstance & { effectData?: { credits?: number; power?: Partial<PowerState>; powerChoice?: number } };
       if (starter.effectData?.credits) {
@@ -484,9 +545,16 @@ export class AIEngine {
       if (starter.effectData?.power) {
         const totalPower = Object.values(starter.effectData.power).reduce((sum, v) => sum + (v ?? 0), 0);
         score += totalPower * powerMultiplier * this.weights.powerValue;
+        score += this.powerMatchBonus(starter.effectData.power, deficit) * DEFICIT_BONUS_PER_MATCH;
       }
       if (starter.effectData?.powerChoice) {
+        // powerChoice can be allocated to the deficit systems directly via
+        // getBestPowerAllocation(), so any unit of it is worth the match
+        // bonus up to the total deficit size.
+        const totalDeficit = Object.values(deficit).reduce((a, b) => a + (b ?? 0), 0);
+        const matchable = Math.min(starter.effectData.powerChoice, totalDeficit);
         score += starter.effectData.powerChoice * powerMultiplier * this.weights.powerValue;
+        score += matchable * DEFICIT_BONUS_PER_MATCH;
       }
     }
 
@@ -495,10 +563,16 @@ export class AIEngine {
       const data = action.effectData;
       if (data) {
         if (data.credits) score += data.credits * 2 * this.weights.creditValue;
-        if (data.powerChoice) score += data.powerChoice * powerMultiplier * this.weights.powerValue;
+        if (data.powerChoice) {
+          const totalDeficit = Object.values(deficit).reduce((a, b) => a + (b ?? 0), 0);
+          const matchable = Math.min(data.powerChoice, totalDeficit);
+          score += data.powerChoice * powerMultiplier * this.weights.powerValue;
+          score += matchable * DEFICIT_BONUS_PER_MATCH;
+        }
         if (data.power) {
           const totalPower = Object.values(data.power).reduce((sum, v) => sum + (v ?? 0), 0);
           score += totalPower * powerMultiplier * this.weights.powerValue;
+          score += this.powerMatchBonus(data.power, deficit) * DEFICIT_BONUS_PER_MATCH;
         }
         if (data.moves) score += data.moves * 3 * this.weights.movementPriority;
         if (data.draw) score += data.draw * 2;
@@ -721,6 +795,10 @@ export class AIEngine {
     if (station !== 1 && station !== 3 && station !== 5) return actions;
 
     const stacks = state.marketStacks[station];
+
+    // Deficit we want to fix across current or target missions — used to
+    // prefer cards whose system matches the gap.
+    const deficit = this.getActiveDeficit(state, player);
     if (!stacks) return actions;
 
     for (let stackIdx = 0; stackIdx < stacks.length; stackIdx++) {
@@ -737,7 +815,10 @@ export class AIEngine {
 
         if (player.credits >= cost) {
           const cardValue = this.scoreCardValue(card, player);
-          const score = (cardValue - cost * 0.5) * this.weights.buyPriority;
+          // Boost for deficit-matching: if this card's native system is one
+          // we're short on for a mission, it's much more valuable to buy.
+          const systemMatch = actionCard.system && (deficit[actionCard.system] ?? 0) > 0 ? 4 : 0;
+          const score = (cardValue + systemMatch - cost * 0.5) * this.weights.buyPriority;
 
           if (score > 0) {
             actions.push({
@@ -752,8 +833,11 @@ export class AIEngine {
               const totalCost = cost + installCost;
 
               if (player.credits >= totalCost) {
-                const installBonus = this.scoreInstallValue(actionCard, player);
-                const installScore = (cardValue + installBonus - totalCost * 0.5) * this.weights.installPriority;
+                const installBonus = this.scoreInstallValue(actionCard, player, deficit);
+                // Same system-match boost, stronger since installs are
+                // persistent (they pay off every turn).
+                const systemMatchInstall = actionCard.system && (deficit[actionCard.system] ?? 0) > 0 ? 8 : 0;
+                const installScore = (cardValue + installBonus + systemMatchInstall - totalCost * 0.5) * this.weights.installPriority;
 
                 if (installScore > score) {
                   // Find best system to install to
@@ -834,7 +918,7 @@ export class AIEngine {
     return actions;
   }
 
-  private scoreInstallActions(_state: GameState, player: Player): ScoredAction[] {
+  private scoreInstallActions(state: GameState, player: Player): ScoredAction[] {
     const actions: ScoredAction[] = [];
 
     // Rogue AI Fragment / Corrosive Spores: can't install while active.
@@ -845,6 +929,8 @@ export class AIEngine {
       return actions;
     }
 
+    const deficit = this.getActiveDeficit(state, player);
+
     for (const card of player.hand) {
       if (card.type !== 'action') continue;
 
@@ -854,8 +940,9 @@ export class AIEngine {
       const cost = Math.max(0, actionCard.installCost - player.installDiscount);
       if (player.credits < cost) continue;
 
-      const installValue = this.scoreInstallValue(actionCard, player);
-      const score = (installValue - cost * 0.5) * this.weights.installPriority;
+      const installValue = this.scoreInstallValue(actionCard, player, deficit);
+      const systemMatch = actionCard.system && (deficit[actionCard.system] ?? 0) > 0 ? 8 : 0;
+      const score = (installValue + systemMatch - cost * 0.5) * this.weights.installPriority;
 
       if (score > 0) {
         const bestSystem = this.getBestInstallSystem(actionCard, player);
@@ -948,7 +1035,7 @@ export class AIEngine {
     return value;
   }
 
-  private scoreInstallValue(card: ActionCard, player: Player): number {
+  private scoreInstallValue(card: ActionCard, player: Player, deficit?: Partial<PowerState>): number {
     if (!card.installData) return 0;
 
     let value = 0;
@@ -960,8 +1047,22 @@ export class AIEngine {
     if (data.power) {
       const totalPower = Object.values(data.power).reduce((sum, v) => sum + (v ?? 0), 0);
       value += totalPower * turnsRemaining * 0.5;
+      // Persistent power that matches our mission deficit is worth extra —
+      // every turn for the rest of the game, we'll have the power we need.
+      if (deficit) {
+        value += this.powerMatchBonus(data.power, deficit) * turnsRemaining * 1.0;
+      }
     }
-    if (data.powerChoice) value += data.powerChoice * turnsRemaining * 0.5;
+    if (data.powerChoice) {
+      value += data.powerChoice * turnsRemaining * 0.5;
+      // Install-time power-choice can be allocated to the deficit system,
+      // then persistently provides that power.
+      if (deficit) {
+        const totalDeficit = Object.values(deficit).reduce((a, b) => a + (b ?? 0), 0);
+        const matchable = Math.min(data.powerChoice, totalDeficit);
+        value += matchable * turnsRemaining * 1.0;
+      }
+    }
     if (data.credits) value += data.credits * turnsRemaining * 0.3;
     if (data.draw) value += data.draw * turnsRemaining * 0.4;
     if (data.moves) value += data.moves * turnsRemaining * 0.3;
