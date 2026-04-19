@@ -8,6 +8,8 @@ import type {
   AIStrategy,
   SimulationConfig,
   SimulationResults,
+  SimGameResult,
+  SimActionLogEntry,
   EconomyStats,
 } from '../types/index.js';
 
@@ -20,7 +22,11 @@ import { CAPTAINS } from '../data/captains.js';
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Internal runner type. The public, serializable shape is SimGameResult from
+// the shared types — this adds PlayerGameSummary (engine-local) for richer
+// in-memory aggregation during analyzeResults().
 interface GameResult {
+  gameId: number;
   winnerId: number;
   winnerName: string;
   winnerCaptain: string;
@@ -29,6 +35,7 @@ interface GameResult {
   turns: number;
   finalScores: Array<{ name: string; fame: number; captain: string; strategy: AIStrategy }>;
   playerSummaries: PlayerGameSummary[];
+  actionLog: SimActionLogEntry[];
 }
 
 interface StrategyStats {
@@ -66,14 +73,17 @@ export class SimulationRunner {
   private onProgress?: (completed: number, total: number) => void;
 
   constructor(config: Partial<SimulationConfig> = {}) {
-    // Default config
+    // Default config. fixedMatchup, if provided, overrides playerCount,
+    // captains, strategies, and randomizeCaptains for setup.
     this.config = {
       gamesCount: config.gamesCount ?? 100,
-      playerCount: config.playerCount ?? 2,
+      playerCount: config.fixedMatchup?.length ?? config.playerCount ?? 2,
       strategies: config.strategies ?? ['balanced', 'aggressive', 'economic', 'explorer', 'rush'],
       captains: config.captains ?? CAPTAINS.map(c => c.id),
       randomizeCaptains: config.randomizeCaptains ?? true,
       maxTurns: config.maxTurns ?? 50,
+      captureActionLog: config.captureActionLog ?? true,
+      fixedMatchup: config.fixedMatchup,
     };
   }
 
@@ -90,7 +100,7 @@ export class SimulationRunner {
     const startTime = Date.now();
 
     for (let i = 0; i < this.config.gamesCount; i++) {
-      const result = this.runSingleGame();
+      const result = this.runSingleGame(i + 1);
       this.results.push(result);
 
       // Report progress
@@ -114,7 +124,7 @@ export class SimulationRunner {
     const startTime = Date.now();
 
     for (let i = 0; i < this.config.gamesCount; i++) {
-      const result = this.runSingleGame();
+      const result = this.runSingleGame(i + 1);
       this.results.push(result);
 
       if (this.onProgress) {
@@ -130,8 +140,8 @@ export class SimulationRunner {
   // Single Game Execution
   // ─────────────────────────────────────────────────────────────────────────
 
-  private runSingleGame(): GameResult {
-    // Setup players with random captains and strategies
+  private runSingleGame(gameId: number): GameResult {
+    // Setup players with captains + strategies (random or fixed matchup)
     const players = this.setupPlayers();
 
     // Create game engine with stats tracking enabled
@@ -144,6 +154,10 @@ export class SimulationRunner {
       aiEngines.set(idx, new AIEngine(p.aiStrategy!));
     });
 
+    // Per-action log (recorded post-dispatch with snapshot of actor state).
+    const actionLog: SimActionLogEntry[] = [];
+    const captureLog = this.config.captureActionLog !== false;
+
     // Run game loop
     let turns = 0;
     let gameState = engine.getState();
@@ -151,6 +165,7 @@ export class SimulationRunner {
     while (!gameState.gameOver && turns < this.config.maxTurns) {
       const currentPlayer = gameState.players[gameState.currentPlayerIndex];
       const aiEngine = aiEngines.get(currentPlayer.id)!;
+      const playerConfig = players[currentPlayer.id];
 
       // Let AI make decisions until turn ends
       let actionsThisTurn = 0;
@@ -161,11 +176,20 @@ export class SimulationRunner {
 
         if (!action || action.type === 'END_TURN') {
           engine.dispatch({ type: 'END_TURN' });
+          if (captureLog) {
+            this.logAction(actionLog, engine.getState(), currentPlayer.id, playerConfig, { type: 'END_TURN' });
+          }
           break;
         }
 
         engine.dispatch(action);
         gameState = engine.getState();
+
+        if (captureLog) {
+          // Record against the original actor (state may have advanced the
+          // current player already if action ended the turn).
+          this.logAction(actionLog, gameState, currentPlayer.id, playerConfig, action);
+        }
 
         // Check if turn changed or game ended
         if (gameState.gameOver) break;
@@ -177,6 +201,9 @@ export class SimulationRunner {
       // If we hit the action limit, force end turn
       if (actionsThisTurn >= maxActionsPerTurn && !gameState.gameOver) {
         engine.dispatch({ type: 'END_TURN' });
+        if (captureLog) {
+          this.logAction(actionLog, engine.getState(), currentPlayer.id, playerConfig, { type: 'END_TURN' });
+        }
       }
 
       gameState = engine.getState();
@@ -197,6 +224,7 @@ export class SimulationRunner {
       : [];
 
     return {
+      gameId,
       winnerId: winner.id,
       winnerName: winner.name,
       winnerCaptain: winner.captain.id,
@@ -210,10 +238,52 @@ export class SimulationRunner {
         strategy: players.find(pl => pl.name === p.name)!.aiStrategy!,
       })),
       playerSummaries,
+      actionLog,
     };
   }
 
+  // Snapshot the actor's state into a log entry post-dispatch.
+  private logAction(
+    log: SimActionLogEntry[],
+    state: ReturnType<GameEngine['getState']>,
+    actorId: number,
+    playerConfig: { captain: Captain; aiStrategy?: AIStrategy; name: string },
+    action: SimActionLogEntry['action'],
+  ): void {
+    const actor = state.players.find(p => p.id === actorId);
+    if (!actor) return;
+    log.push({
+      turn: state.turn,
+      playerIndex: actorId,
+      playerName: playerConfig.name,
+      playerCaptain: playerConfig.captain.id,
+      playerStrategy: playerConfig.aiStrategy ?? 'balanced',
+      action,
+      fame: actor.fame,
+      credits: actor.credits,
+      location: actor.location,
+      power: { ...actor.currentPower },
+    });
+  }
+
   private setupPlayers(): Array<{ name: string; captain: Captain; isAI: true; aiStrategy: AIStrategy }> {
+    // Fixed matchup mode: deterministic seating of specific captain+strategy pairs.
+    if (this.config.fixedMatchup && this.config.fixedMatchup.length > 0) {
+      return this.config.fixedMatchup.map((entry, i) => {
+        const captain = CAPTAINS.find(c => c.id === entry.captainId);
+        if (!captain) {
+          throw new Error(`fixedMatchup: unknown captain id "${entry.captainId}"`);
+        }
+        return {
+          name: `AI_${i + 1}_${entry.strategy}`,
+          captain,
+          isAI: true as const,
+          aiStrategy: entry.strategy,
+        };
+      });
+    }
+
+    // Random matchup (default)
     const players: Array<{ name: string; captain: Captain; isAI: true; aiStrategy: AIStrategy }> = [];
     const usedCaptains = new Set<string>();
 
@@ -419,6 +489,20 @@ export class SimulationRunner {
       fameCurvesByStrategy[strategy] = avgCurve;
     }
 
+    // Flatten internal results into the serializable SimGameResult shape.
+    const games: SimGameResult[] = this.results.map(r => ({
+      gameId: r.gameId,
+      winnerId: r.winnerId,
+      winnerName: r.winnerName,
+      winnerCaptain: r.winnerCaptain,
+      winnerStrategy: r.winnerStrategy,
+      winnerFame: r.winnerFame,
+      turns: r.turns,
+      finalScores: r.finalScores,
+      playerSummaries: r.playerSummaries as unknown[],
+      actionLog: r.actionLog,
+    }));
+
     return {
       gamesPlayed: this.results.length,
       avgTurns,
@@ -432,6 +516,7 @@ export class SimulationRunner {
       avgEconomyByStrategy,
       avgEconomyByCaptain,
       fameCurvesByStrategy,
+      games,
     };
   }
 

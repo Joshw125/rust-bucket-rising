@@ -523,6 +523,41 @@ export interface EconomyStats {
   avgTurnToFirstMission: number | null;
 }
 
+// Per-action trace captured during simulation. One entry per AI dispatch.
+// Used for post-hoc replay/analysis — each entry records WHAT the AI did
+// and the state immediately after (fame/credits/power/location) so you can
+// see the effect of each decision without replaying the whole engine.
+export interface SimActionLogEntry {
+  turn: number;
+  playerIndex: number; // seat index in this game (0..n-1)
+  playerName: string;
+  playerCaptain: string; // captain id
+  playerStrategy: AIStrategy;
+  action: GameAction;
+  // Post-action snapshots:
+  fame: number;
+  credits: number;
+  location: number;
+  power: PowerState;
+}
+
+// Per-game result with enough detail to replay or drill into.
+export interface SimGameResult {
+  gameId: number; // 1..N
+  winnerId: number;
+  winnerName: string;
+  winnerCaptain: string;
+  winnerStrategy: AIStrategy;
+  winnerFame: number;
+  turns: number;
+  finalScores: Array<{ name: string; fame: number; captain: string; strategy: AIStrategy }>;
+  // Per-player summaries (from GameStatsTracker) — kept opaque here to avoid
+  // a circular import. Consumers that need the shape import from the engine.
+  playerSummaries: unknown[];
+  // Per-action trace. Empty if captureActionLog was false (perf opt-out).
+  actionLog: SimActionLogEntry[];
+}
+
 export interface SimulationResults {
   gamesPlayed: number;
   avgTurns: number;
@@ -538,6 +573,10 @@ export interface SimulationResults {
   avgEconomyByStrategy: Record<string, EconomyStats>;
   avgEconomyByCaptain: Record<string, EconomyStats>;
   fameCurvesByStrategy: Record<string, number[]>;
+
+  // Individual games (for drill-down / replay / export). Included unless
+  // the run explicitly disabled per-game retention.
+  games: SimGameResult[];
 }
 
 export interface SimulationConfig {
@@ -547,6 +586,13 @@ export interface SimulationConfig {
   captains: string[];
   randomizeCaptains: boolean;
   maxTurns: number;
+  // Whether to capture per-action traces. Default true. Disable for ultra-
+  // fast large batches where only aggregates matter.
+  captureActionLog?: boolean;
+  // Fixed matchup mode: pin a specific captain + strategy to each seat.
+  // Overrides `captains`, `strategies`, and `randomizeCaptains` for the
+  // captain/strategy assignment. Seat count = array length (sets playerCount).
+  fixedMatchup?: Array<{ captainId: string; strategy: AIStrategy }>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
