@@ -14,7 +14,7 @@ import { useAnimationStore } from '@/hooks/useAnimationStore';
 import { SpaceTrack } from './SpaceTrack';
 import { ExpandedSystemPanel } from './PlayerStatsBar';
 import { HandDisplay } from './HandDisplay';
-import { OpponentBar } from './OpponentBar';
+import { OpponentBar, getShipImagePath } from './OpponentBar';
 import { PyramidMarket } from './PyramidMarket';
 import { MarketOverlay } from './MarketDisplay';
 import { Card, MissionCard, CardBack } from './Card';
@@ -1908,7 +1908,7 @@ function CaptainViewerModal({
   onClose: () => void;
 }) {
   const filename = captain.id.charAt(0).toUpperCase() + captain.id.slice(1);
-  const imgPath = `/cards/captain/${filename}.png`;
+  const imgPath = `/cards/captain/${filename}.webp`;
 
   return createPortal(
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onClose}>
@@ -1966,18 +1966,27 @@ function OpponentTableauModal({
 }) {
   const playerIndex = allPlayers.findIndex(p => p.id === player.id);
   const pColor = PLAYER_COLORS[playerIndex % PLAYER_COLORS.length];
+  const shipImg = getShipImagePath(player.id);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="game-panel p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto"
+        className="game-panel p-5 max-w-lg w-full max-h-[85vh] overflow-y-auto relative"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Ship background — deterministic per-seat, lazy-loaded webp. */}
+        <div
+          aria-hidden
+          className="absolute inset-0 rounded-inherit bg-cover bg-center opacity-20 pointer-events-none"
+          style={{ backgroundImage: `url('${shipImg}')` }}
+        />
+        {/* Content wrapper to sit above the ship image */}
+        <div className="relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <img
-              src={`/cards/captain/${player.captain.id.charAt(0).toUpperCase() + player.captain.id.slice(1)}.png`}
+              src={`/cards/captain/${player.captain.id.charAt(0).toUpperCase() + player.captain.id.slice(1)}.webp`}
               alt={player.captain.name}
               className="w-12 h-12 rounded object-cover border-2"
               style={{ borderColor: pColor.hex + '80' }}
@@ -2060,6 +2069,7 @@ function OpponentTableauModal({
           <span>Played: {player.played.length}</span>
           <span>Hazards: {player.hazardsInDeck}</span>
         </div>
+        </div>{/* /relative z-10 content wrapper */}
       </div>
     </div>
   );
@@ -2300,7 +2310,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <img
-                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.webp`}
                 alt={localPlayer.captain.name}
                 className="w-8 h-8 rounded object-cover border border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
                 onClick={() => setViewingCaptain(localPlayer.captain)}
@@ -2400,7 +2410,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
               {/* Captain & Fame */}
               <div className="flex items-center gap-3 p-3 game-panel">
                 <img
-                  src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                  src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.webp`}
                   alt={localPlayer.captain.name}
                   className="w-14 h-14 rounded object-cover border-2 border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
                   onClick={() => setViewingCaptain(localPlayer.captain)}
@@ -2718,7 +2728,7 @@ export function GameBoard({ isOnlineGame = false, localPlayerIndex = null }: Gam
           <div className="flex-none p-3 border-b border-amber-900/20">
             <div className="flex items-center gap-3">
               <img
-                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.png`}
+                src={`/cards/captain/${localPlayer.captain.id.charAt(0).toUpperCase() + localPlayer.captain.id.slice(1)}.webp`}
                 alt={localPlayer.captain.name}
                 className="w-14 h-14 rounded object-cover border-2 border-amber-600/50 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
                 onClick={() => setViewingCaptain(localPlayer.captain)}

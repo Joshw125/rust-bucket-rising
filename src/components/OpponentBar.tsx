@@ -27,9 +27,61 @@ export interface OpponentBarProps {
 
 function getCaptainImagePath(captainId: string): string {
   // Captain IDs are like "scrapper", "veteran", etc.
-  // Files are like "Scrapper.png", "Veteran.png"
+  // Files are like "Scrapper.webp", "Veteran.webp"
   const filename = captainId.charAt(0).toUpperCase() + captainId.slice(1);
-  return `/cards/captain/${filename}.png`;
+  return `/cards/captain/${filename}.webp`;
+}
+
+// Assign each player a ship based on seat index — deterministic so all clients
+// see the same ship for each opponent. 4 ships cycle.
+export function getShipImagePath(playerId: number): string {
+  const n = (playerId % 4) + 1;
+  return `/cards/player/Ship${n}.webp`;
+}
+
+// Compact chip showing a player's installed card + gear for a given system.
+// Blank slots render as dashes so rows stay visually aligned.
+function InstallChip({
+  system,
+  cardTitle,
+  gearTitle,
+}: {
+  system: SystemType;
+  cardTitle: string | null;
+  gearTitle: string | null;
+}) {
+  const config = SYSTEM_CONFIG[system];
+  return (
+    <div className="flex items-center gap-1 text-[10px] leading-tight">
+      <span className={clsx('font-bold w-4 shrink-0', config.textClass)}>
+        {system[0].toUpperCase()}
+      </span>
+      <div className="flex-1 min-w-0 flex gap-1">
+        <span
+          className={clsx(
+            'flex-1 min-w-0 truncate px-1 rounded border',
+            cardTitle
+              ? `${config.textClass} border-slate-700/60 bg-slate-800/60`
+              : 'text-slate-600 border-slate-800/50 bg-slate-900/30',
+          )}
+          title={cardTitle ? `Installed: ${cardTitle}` : 'No install'}
+        >
+          {cardTitle ?? '—'}
+        </span>
+        <span
+          className={clsx(
+            'flex-1 min-w-0 truncate px-1 rounded border',
+            gearTitle
+              ? 'text-amber-300 border-amber-700/40 bg-amber-950/30'
+              : 'text-slate-600 border-slate-800/50 bg-slate-900/30',
+          )}
+          title={gearTitle ? `Gear: ${gearTitle}` : 'No gear'}
+        >
+          {gearTitle ?? '—'}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +253,23 @@ export function OpponentBar({ opponents, allPlayers, layout = 'horizontal', onVi
                 <span>📍{opponent.location}</span>
                 <span>💰{opponent.credits}</span>
                 <span>🃏{opponent.hand.length}</span>
+              </div>
+
+              {/* Installed cards + gears — always visible so others can see
+                  at a glance what each opponent is running. */}
+              <div className="mt-2 space-y-0.5">
+                {SYSTEMS.map(system => {
+                  const install = opponent.installations[system];
+                  const gear = opponent.gearInstallations[system];
+                  return (
+                    <InstallChip
+                      key={system}
+                      system={system}
+                      cardTitle={install?.title ?? null}
+                      gearTitle={gear?.title ?? null}
+                    />
+                  );
+                })}
               </div>
 
               {/* Expanded details */}

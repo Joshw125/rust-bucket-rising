@@ -36,7 +36,7 @@ export interface PlayerTableauProps {
 
 function getCaptainImagePath(captainId: string): string {
   const filename = captainId.charAt(0).toUpperCase() + captainId.slice(1);
-  return `/cards/captain/${filename}.png`;
+  return `/cards/captain/${filename}.webp`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
