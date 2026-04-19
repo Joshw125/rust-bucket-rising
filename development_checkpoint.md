@@ -1,6 +1,110 @@
 # Rust Bucket Rising - Development Checkpoint
 
-**Last Updated:** February 25, 2026 — Multiplayer sync overhaul, hazard/install mechanic fixes, UI improvements
+**Last Updated:** April 18, 2026 — Server-authoritative migration, Simulation Lab, Analytics Dashboard, AI fixes, playtest feedback
+
+## April 2026 Session Summary (most recent work)
+
+This session (starting from bug reports about multiplayer desync) landed a large
+refactor + several new features. Architecture now substantially different from
+the February checkpoint below:
+
+### Phase 1 — Extract engine to `shared/`
+Moved `src/engine/`, `src/data/`, `src/types/` to `shared/engine/`, `shared/data/`,
+`shared/types/` so both client and server can import the same game logic.
+Updated client tsconfig/vite alias (`@shared/*`), server tsconfig rootDir,
+Render start command. Server's duplicate `multiplayer.ts` types deleted —
+`shared/types/multiplayer.ts` is now the single source of truth.
+
+### Phase 2 — Server-authoritative engine
+The big flip. Server now instantiates a `GameEngine` per room on `START_GAME`,
+validates + dispatches every `GAME_ACTION`, broadcasts full state. Client for
+online games is now a pure view — its local engine is a "mirror" that accepts
+server state updates, never dispatches actions itself. All the old desync
+mechanisms (host snapshots, grace periods, action replay, state hash) are
+gone. Mission reveals, hazard target validation, and mission completion now
+happen on a single authoritative state that all clients see identically.
+
+### Phase 3 — Cleanup (-172 lines)
+Removed dead code: `computeStateHash`, `applyRemoteAction`, `onActionDispatched`,
+`lastLocalDispatchTime`, `loadSnapshot`, `sendStateSnapshot`, `RESYNC_REQUESTED`
+server→client message, `Room.stateHash`, host-fallback paths in
+`handleRequestResync`, `getClientByPlayerId`. Zero behavior change.
+
+### Phase 4 — UX polish
+- **ErrorBoundary** (`src/components/ErrorBoundary.tsx`) — recoverable error
+  screen instead of blank page on uncaught render errors.
+- **Toast** (`src/components/Toast.tsx`) — global top-right notification for
+  server ERRORs, auto-dismisses at 5s.
+- **Optimistic "Syncing…" indicator** — the online-game badge pulses amber
+  while waiting for server response after an action.
+
+### Analytics Dashboard (new)
+Main menu button opens a dashboard at `/analytics`. Fetches aggregated stats
+from server's `/stats` endpoint (expanded to compute captain winrates,
+game duration, turn count, player-count distribution, recent games).
+
+### Simulation Lab
+Massive expansion of the existing Simulation Mode:
+- Per-decision action log (every AI dispatch recorded with turn, player,
+  action, post-action state)
+- Fixed matchup mode (pin captain + strategy per seat)
+- Per-game replay viewer with filter + drill-down
+- JSON export
+- Auto-analysis view: anomaly banner, turn-length histogram, captain matchup
+  matrix, fame trajectory chart, card impact table
+
+### AI bug fixes
+- **Infinite dispatch loops** — when AI scored an action the engine rejected
+  (e.g. MOVE when Thruster Jam is in hand), the simulator kept re-proposing
+  the same action. Fixed: SimulationRunner now treats two consecutive
+  rejections as "force end turn."
+- **Hazard awareness in AI scorers** — AI no longer proposes COMPLETE_MISSION
+  under Corrupted Nav Chip, MOVE under Thruster Jam, PLAY under Failsafe
+  Lockdown, or INSTALL under Rogue AI Fragment / Corrosive Spores.
+- **Deficit-aware power scoring** — AI boosts score for cards whose power
+  matches the specific system deficit for an in-range mission (new
+  `getActiveDeficit`, `powerMatchBonus` helpers).
+
+### Silent no-ops fixed during audit
+Parallel agent audit of all cards/missions turned up 11 effect fields that
+were declared in data but never read by the engine:
+- Card plays (3): Remote Uplink `conditionalPower.cardsPlayed7plus`, Gravity
+  Sling `conditionalDraw.moved2plus`, Targeting Array
+  `conditionalMissionDiscount.weaponsPower3plus`
+- Mission rewards (8): all `conditional*` fields on rewardData (Signal Boost,
+  System Check, Encrypted Relay, Smuggler Rendezvous, Relic Excavation,
+  Hazard Dump Zone, Quantum Proxy Hack, Fleet Arbitration)
+- `oneTimeUse` was tracked but never checked in `canPlayCard` — cards could
+  be replayed if re-drawn. Now truly once-per-game.
+
+### Playtest feedback captured (April 2026)
+One 7-turn game played by Claude-as-player (Scrapper) vs 3 AIs. Won 23 fame.
+Key observations recorded in conversation — summary:
+
+**Design issues to address:**
+- Mag-Leash install text ≠ data ("+1 move" in text, +1 power in data)
+- Targeting Array install effect declared but `applyInstallationEffects`
+  doesn't handle `conditionalMissionDiscount` field → dead code
+- Orbital Delivery `credits: 1` double-counts (mission completion AND every
+  turn start from gear)
+- Supply Check overrepresented in starter deck (4 of 10) — credits reset
+  so excess is waste
+- Captain balance wide: high-starting-power captains (Scrapper, Engineer)
+  dominate vs economy/utility captains (Tycoon, Navigator)
+- Engine Boosters (T1 install +1 move/turn) potentially too strong for
+  its cost
+- Gear stacking: 3 credit-generating gears simultaneously is probably too
+  much
+- Rulebook says "only top card of stack buyable" but code allows any
+  `cardIndex`
+
+**Playtest tool gaps:**
+- Market display only shows played effect, not install effect (IMAGE-based
+  cards DO show both — it's a tooling gap for devs inspecting data, not
+  a player-facing issue)
+- No preview of opponents' installations
+- No deck composition view
+- No turn-by-turn "what did opponent do last turn" log
 
 ---
 
