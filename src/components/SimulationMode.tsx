@@ -22,6 +22,7 @@ import type {
   SimActionLogEntry,
   GameAction,
 } from '@shared/types';
+import { SimulationAnalysis } from './SimulationAnalysis';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -684,6 +685,7 @@ export function SimulationMode({ onBack }: { onBack: () => void }) {
               </button>
             </div>
             <ResultsDisplay results={results} />
+            <SimulationAnalysis results={results} />
             {results.games && results.games.length > 0 && <GamesList games={results.games} />}
           </div>
         )}
