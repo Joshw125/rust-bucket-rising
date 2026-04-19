@@ -358,6 +358,7 @@ export interface Player {
   // Turn state
   movesRemaining: number;
   cardsPlayedThisTurn: number;
+  cardsPlayedLastTurn: number; // Copied from cardsPlayedThisTurn at start of each turn, before reset (for cards2plus/cards5plus gear triggers)
   movesThisTurn: number; // Tracks actual spaces moved (for Thruster Jam)
   powerGainedFromCardsThisTurn: number; // Tracks power from cards (for Overloaded Circuits)
   usedCaptainAbility: boolean;
@@ -373,6 +374,7 @@ export interface Player {
   // Stats
   hazardsInDeck: number;
   hazardsGivenThisTurn: number;
+  hazardsTrashedLifetime: number; // Total hazards this player has trashed this game (for trash2hazards mission trigger)
 
   // Turn tracking for reveals
   revealedStacksThisTurn: Record<1 | 3 | 5, number | false>; // Tracks which stack index was revealed per tier this turn (false = none)

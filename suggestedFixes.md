@@ -277,7 +277,7 @@ These cards have fundamental design problems beyond just missing implementation.
 7. ~~Fix `playerHasActiveHazard` to only check hand~~ DONE
 8. ~~Add tiebreaker logic to `endGame()`~~ DONE
 9. ~~Fix Broker captain ability in engine~~ DONE
-10. ~~Address Near Space snowball~~ DONE (missions bumped to 4 total power)
+10. Address Near Space snowball — NOT DONE (missions remain at 3 total power per card art; balance revisit deferred)
 
 ### Phase 3: Redesign Broken Cards — REMAINING
 11. Redesign Synced Loop (both play and install effects)

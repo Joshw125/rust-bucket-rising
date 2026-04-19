@@ -35,7 +35,7 @@
 - Market stations at locations 1, 3, 5 (Tier 1, 2, 3)
 - Credits system (resets each turn)
 - Fame tracking, victory at 25 Fame
-- End-game hazard penalty (-1 Fame per 3 hazards)
+- End-game hazard penalty (-1 Fame per hazard in deck)
 - Tiebreaker: Fame → Missions completed → Fewest hazards → Credits
 
 ### All Card Effects (fixed Feb 2026)

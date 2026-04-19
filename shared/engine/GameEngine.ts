@@ -193,6 +193,7 @@ export function createPlayer(id: number, name: string, captain: Captain, isAI = 
     // Turn state
     movesRemaining: 0,
     cardsPlayedThisTurn: 0,
+    cardsPlayedLastTurn: 0,
     movesThisTurn: 0,
     powerGainedFromCardsThisTurn: 0,
     usedCaptainAbility: false,
@@ -213,6 +214,7 @@ export function createPlayer(id: number, name: string, captain: Captain, isAI = 
     // Stats
     hazardsInDeck: 0,
     hazardsGivenThisTurn: 0,
+    hazardsTrashedLifetime: 0,
 
     // Turn tracking for reveals
     revealedStacksThisTurn: { 1: false, 3: false, 5: false },
@@ -315,6 +317,43 @@ export function setupHazardDeck(): CardInstance[] {
     }
   }
   return shuffle(deck);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trigger matching helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Used by trophy/gear conditional effects. Decides whether a data-declared
+ * trigger (like `trophies2plus` or `onGiveHazard`) should fire for the
+ * current event.
+ *
+ * - Direct event triggers match when dataTrigger === eventTrigger
+ *   (onTrash, onGainCredits, onGiveHazard, atStation, ifAlone, onMission).
+ * - State-based triggers (trophies2plus, missions3plus, ...) only evaluate
+ *   at 'turnStart' — the caller is responsible for firing a turnStart pass
+ *   at the start of each player's turn.
+ */
+function matchesTrigger(
+  dataTrigger: string,
+  eventTrigger: string,
+  player: Player,
+): boolean {
+  // Direct event match
+  if (dataTrigger === eventTrigger) return true;
+
+  // State-based triggers are only evaluated during turn start sweeps.
+  if (eventTrigger !== 'turnStart') return false;
+
+  switch (dataTrigger) {
+    case 'trophies2plus':
+      return player.trophies.length >= 2;
+    case 'missions3plus':
+      return player.completedMissions.length >= 3;
+    case 'hazards2plus':
+      return player.hazardsInDeck >= 2;
+  }
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,6 +524,7 @@ export class GameEngine {
     // Track hazard removal
     if (card.type === 'hazard') {
       player.hazardsInDeck = Math.max(0, player.hazardsInDeck - 1);
+      player.hazardsTrashedLifetime += 1;
     }
 
     this.stats?.onCardTrashed(player.id);
@@ -503,7 +543,9 @@ export class GameEngine {
   private startTurn(): void {
     const player = this.getCurrentPlayer();
 
-    // Reset turn state
+    // Reset turn state. Snapshot cards played last turn BEFORE resetting
+    // (cards2plus/cards5plus gear triggers read cardsPlayedLastTurn).
+    player.cardsPlayedLastTurn = player.cardsPlayedThisTurn;
     player.movesRemaining = 0;
     player.cardsPlayedThisTurn = 0;
     player.movesThisTurn = 0;
@@ -959,6 +1001,7 @@ export class GameEngine {
       // Conditional power based on game state
       if (data.conditionalPower) {
         const trigger = data.conditionalPower.trigger;
+        const isAloneHere = !this.state.players.some(p => p.id !== player.id && p.location === player.location);
         let triggered = false;
 
         switch (trigger) {
@@ -966,11 +1009,12 @@ export class GameEngine {
             triggered = player.completedMissions.length >= 3;
             break;
           case 'cards2plus':
-            // Can't check this at turn start - will need different handling
-            // For now skip
+            // Evaluated against LAST turn's play count (cardsPlayedThisTurn
+            // resets at turn start, so checking it here would always be 0).
+            triggered = player.cardsPlayedLastTurn >= 2;
             break;
           case 'cards5plus':
-            // Similarly, can't check at turn start
+            triggered = player.cardsPlayedLastTurn >= 5;
             break;
           case 'hazards2plus':
             triggered = player.hazardsInDeck >= 2;
@@ -978,11 +1022,37 @@ export class GameEngine {
           case 'trophies2plus':
             triggered = player.trophies.length >= 2;
             break;
+          case 'soloMission':
+            // Quantum Proxy Hack: bonus power when alone at current location.
+            triggered = isAloneHere;
+            break;
         }
 
         if (triggered) {
           player.currentPower[system] = Math.min(MAX_POWER, player.currentPower[system] + data.conditionalPower.amount);
           effects.push(`+${data.conditionalPower.amount}⚡ (${trigger})`);
+        }
+      }
+
+      // Conditional credits on gear (Encrypted Relay, Deep Void Courier).
+      // onMission fires from completeMission(); atStation / ifAlone fire here.
+      if (data.conditionalCredits) {
+        const trigger = data.conditionalCredits.trigger;
+        let triggered = false;
+        const isAtStation = [1, 3, 5].includes(player.location);
+        const isAloneHere = !this.state.players.some(p => p.id !== player.id && p.location === player.location);
+        switch (trigger) {
+          case 'atStation':
+            triggered = isAtStation;
+            break;
+          case 'ifAlone':
+            triggered = isAloneHere;
+            break;
+          // onMission is handled in completeMission() — don't fire here.
+        }
+        if (triggered) {
+          player.credits += data.conditionalCredits.amount;
+          effects.push(`+${data.conditionalCredits.amount} Credit${data.conditionalCredits.amount > 1 ? 's' : ''} (${trigger})`);
         }
       }
 
@@ -995,6 +1065,10 @@ export class GameEngine {
     // Trophy passives that trigger at turn start
     const isAtStation = [1, 3, 5].includes(player.location);
     const isAlone = !this.state.players.some(p => p.id !== player.id && p.location === player.location);
+
+    // State-based trophy triggers (trophies2plus, missions3plus, etc.)
+    // These evaluate current game state every turn start.
+    this.checkTrophyPassives(player, 'turnStart');
 
     if (isAtStation) {
       this.checkTrophyPassives(player, 'atStation');
@@ -1150,6 +1224,13 @@ export class GameEngine {
       return false;
     }
 
+    // One-time use enforcement: a card marked oneTimeUse can only be played
+    // once PER GAME. Without this, a shuffled-back copy could be played again.
+    const effectData = (card as ActionCard).effectData;
+    if (effectData?.oneTimeUse && player.usedOneTimeCards.includes(card.id)) {
+      return false;
+    }
+
     return true;
   }
 
@@ -1265,6 +1346,37 @@ export class GameEngine {
       this.log(`  Drew ${effectData.draw} cards`, 'reward');
     }
 
+    // Conditional card draw (Gravity Sling: +1 card if moved 2+ this turn)
+    if (effectData.conditionalDraw) {
+      const { trigger, amount } = effectData.conditionalDraw;
+      let triggered = false;
+      switch (trigger) {
+        case 'moved2plus':
+          triggered = player.movesThisTurn >= 2;
+          break;
+      }
+      if (triggered) {
+        this.drawCards(player, amount);
+        this.log(`  +${amount} Card (${trigger})`, 'reward');
+      }
+    }
+
+    // Conditional play-time power (Remote Uplink: +2⚡ if 7+ cards played this turn)
+    if (effectData.conditionalPower) {
+      const { trigger, amount } = effectData.conditionalPower;
+      let triggered = false;
+      switch (trigger) {
+        case 'cardsPlayed7plus':
+          triggered = player.cardsPlayedThisTurn >= 7;
+          break;
+      }
+      if (triggered) {
+        const sys = getHighestSystem(player.currentPower);
+        player.currentPower[sys] = Math.min(MAX_POWER, player.currentPower[sys] + amount);
+        this.log(`  +${amount}⚡ to ${sys} (${trigger})`, 'reward');
+      }
+    }
+
     // Discounts
     if (effectData.buyDiscount) {
       player.buyDiscount += effectData.buyDiscount;
@@ -1276,17 +1388,36 @@ export class GameEngine {
       player.missionDiscount += effectData.missionDiscount;
     }
 
+    // Conditional mission discount (Targeting Array: -1⚡ missions if weapons ≥ 3)
+    if (effectData.conditionalMissionDiscount) {
+      const { trigger, amount } = effectData.conditionalMissionDiscount;
+      let triggered = false;
+      switch (trigger) {
+        case 'weaponsPower3plus':
+          triggered = player.currentPower.weapons >= 3;
+          break;
+      }
+      if (triggered) {
+        player.missionDiscount += amount;
+        this.log(`  Mission -${amount}⚡ (${trigger})`, 'reward');
+      }
+    }
+
     // Extra plays
     if (effectData.extraPlay) {
       player.extraPlays += effectData.extraPlay;
     }
 
-    // One-time use: trash the card after playing (remove from played pile entirely)
+    // One-time use: trash the card after playing (remove from played pile
+    // entirely) AND record the card id so it can't be replayed if re-drawn.
     if (effectData.oneTimeUse) {
       const playedIdx = player.played.findIndex(c => c.instanceId === card.instanceId);
       if (playedIdx >= 0) {
         player.played.splice(playedIdx, 1);
         this.log(`  ${card.title} is consumed (one-time use)`, 'info');
+      }
+      if (!player.usedOneTimeCards.includes(card.id)) {
+        player.usedOneTimeCards.push(card.id);
       }
     }
 
@@ -1717,9 +1848,30 @@ export class GameEngine {
   }
 
   // Check and apply trophy passive effects
+  /**
+   * Fire event-based credit triggers on installed gear. Covers things like
+   * Encrypted Relay's "+1 credit on every mission completion" — the gear
+   * is installed in a system slot and `data.conditionalCredits.trigger ===
+   * 'onMission'` is read here rather than at turn start.
+   */
+  private fireGearCreditTrigger(player: Player, trigger: string): void {
+    for (const system of SYSTEMS) {
+      const gear = player.gearInstallations[system];
+      if (!gear) continue;
+      const data = gear.rewardData;
+      if (data.conditionalCredits && data.conditionalCredits.trigger === trigger) {
+        player.credits += data.conditionalCredits.amount;
+        this.log(`  ${gear.title} (gear): +${data.conditionalCredits.amount} Credit${data.conditionalCredits.amount > 1 ? 's' : ''} (${trigger})`, 'reward');
+      }
+    }
+  }
+
   private checkTrophyPassives(player: Player, trigger: string): void {
     for (const trophy of player.trophies) {
-      const passive = trophy.rewardData.passive;
+      const data = trophy.rewardData;
+
+      // Legacy passive format: { trigger, power?, credits? }
+      const passive = data.passive;
       if (passive && passive.trigger === trigger) {
         if (passive.power) {
           const sys = getHighestSystem(player.currentPower);
@@ -1730,6 +1882,20 @@ export class GameEngine {
           player.credits += passive.credits;
           this.log(`  ${trophy.title} trophy: +${passive.credits} Credits`, 'reward');
         }
+      }
+
+      // Newer format: trophies can also use conditionalPower / conditionalCredits
+      // with a string trigger that matches one of the event names below.
+      // (Smuggler Rendezvous uses conditionalPower trophies2plus; Fleet
+      // Arbitration uses conditionalCredits atStation.)
+      if (data.conditionalPower && matchesTrigger(data.conditionalPower.trigger, trigger, player)) {
+        const sys = getHighestSystem(player.currentPower);
+        player.currentPower[sys] = Math.min(MAX_POWER, player.currentPower[sys] + data.conditionalPower.amount);
+        this.log(`  ${trophy.title} trophy: +${data.conditionalPower.amount}⚡ to ${sys}`, 'reward');
+      }
+      if (data.conditionalCredits && matchesTrigger(data.conditionalCredits.trigger, trigger, player)) {
+        player.credits += data.conditionalCredits.amount;
+        this.log(`  ${trophy.title} trophy: +${data.conditionalCredits.amount} Credits`, 'reward');
       }
     }
   }
@@ -2177,6 +2343,12 @@ export class GameEngine {
       player.trophies.push(mission);
     }
 
+    // Fire onMission trigger for gear + trophy conditional effects
+    // (Encrypted Relay gear gives +1 credit per mission completion;
+    // future trophies with onMission triggers would also fire here.)
+    this.checkTrophyPassives(player, 'onMission');
+    this.fireGearCreditTrigger(player, 'onMission');
+
     // Clear mission slot — replacement happens at end of turn
     this.state.trackMissions[player.location] = null;
     this.state.pendingMissionReplacements.push(player.location);
@@ -2284,6 +2456,48 @@ export class GameEngine {
       const hazardsInHand = player.hand.filter(c => c.type === 'hazard');
       if (hazardsInHand.length > 0) {
         this.trashCard(player, hazardsInHand[0].instanceId, 'hand');
+      }
+    }
+
+    // One-shot conditional fame at completion time (Relic Excavation:
+    // "+1 Fame if this is your 5th mission"). completedMissions.push()
+    // happens AFTER applyMissionRewards in completeMission(), so the count
+    // here is pre-push — e.g. mission5 means "this one makes it 5."
+    if (data.conditionalFame) {
+      const { trigger, amount } = data.conditionalFame;
+      let triggered = false;
+      switch (trigger) {
+        case 'mission5':
+          triggered = player.completedMissions.length + 1 >= 5;
+          break;
+      }
+      if (triggered) {
+        player.fame += amount;
+        this.log(`  +${amount} Fame (${trigger})`, 'reward');
+      }
+    }
+
+    // One-shot conditional reward at completion (Hazard Dump Zone:
+    // "+4⚡, +1 Fame if trashed 2+ hazards this game").
+    if (data.conditionalReward) {
+      const { trigger, power, fame } = data.conditionalReward;
+      let triggered = false;
+      switch (trigger) {
+        case 'trash2hazards':
+          triggered = player.hazardsTrashedLifetime >= 2;
+          break;
+      }
+      if (triggered) {
+        if (fame) {
+          player.fame += fame;
+          this.log(`  +${fame} Fame (${trigger})`, 'reward');
+        }
+        if (power) {
+          // Dump straight into highest system; no choice prompt for this edge case.
+          const sys = getHighestSystem(player.currentPower);
+          player.currentPower[sys] = Math.min(MAX_POWER, player.currentPower[sys] + power);
+          this.log(`  +${power}⚡ to ${sys} (${trigger})`, 'reward');
+        }
       }
     }
   }
