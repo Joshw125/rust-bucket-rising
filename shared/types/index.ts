@@ -285,14 +285,14 @@ export interface CaptainAbility {
   // Start of game bonuses
   startBonus?: Partial<PowerState>;
   startPenalty?: number;
-  
+
   // Turn start effects
   turnStart?: 'credit' | 'powerToHighest';
-  
+
   // Passive abilities
   freeMove?: number;
   doubleActivate?: boolean;
-  
+
   // Triggered abilities
   trigger?: string;
   reward?: 'credit' | 'draw' | 'giveHazard';
@@ -397,6 +397,24 @@ export interface MarketStacks {
   5: MarketStackInfo[]; // Station 5 - Tier 3 (3 stacks of 3, face-down initially)
 }
 
+// Fame (victory-point) cards — bought with credits at stations. They grant Fame
+// immediately and are set aside (never enter your deck), with a finite supply per
+// station. Tiered so deeper stations sell better Fame (rewards pushing outward).
+export interface FameCard {
+  id: string;
+  title: string;
+  cost: number;
+  fame: number;
+  flavor?: string;
+}
+
+export interface FameMarketSlot {
+  card: FameCard;
+  remaining: number;
+}
+
+export type FameMarket = Record<1 | 3 | 5, FameMarketSlot | null>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Game State
 // ─────────────────────────────────────────────────────────────────────────────
@@ -458,6 +476,7 @@ export interface GameState {
   trackMissions: Record<number, TrackMission | null>;
   missionPools: MissionPools;
   marketStacks: MarketStacks;
+  fameMarket: FameMarket; // buyable Fame cards per station
   hazardDeck: CardInstance[];
   pendingMissionReplacements: number[]; // Locations that need new missions at end of turn
 
@@ -503,6 +522,7 @@ export type GameAction =
   | { type: 'COMPLETE_MISSION' }
   | { type: 'BUY_CARD'; stackIndex: number; cardIndex: number }
   | { type: 'BUY_AND_INSTALL'; stackIndex: number; targetSystem: SystemType; cardIndex?: number }
+  | { type: 'BUY_FAME_CARD' }
   | { type: 'END_TURN' }
   | { type: 'RESOLVE_PENDING'; choice: unknown }
   | { type: 'CLEAR_HAZARD'; hazardInstanceId: string }

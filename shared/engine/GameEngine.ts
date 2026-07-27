@@ -31,7 +31,7 @@ import {
   SYSTEM_CONFIG,
 } from '../data/constants.js';
 
-import { STARTING_CARDS, TIER_1_CARDS, TIER_2_CARDS, TIER_3_CARDS, HAZARD_CARDS } from '../data/cards.js';
+import { STARTING_CARDS, TIER_1_CARDS, TIER_2_CARDS, TIER_3_CARDS, HAZARD_CARDS, FAME_CARDS } from '../data/cards.js';
 import { GameStatsTracker } from './GameStatsTracker.js';
 import { NEAR_MISSIONS, MID_MISSIONS, DEEP_MISSIONS } from '../data/missions.js';
 
@@ -281,6 +281,14 @@ export function setupMarket(): MarketStacks {
   };
 }
 
+export function setupFameMarket() {
+  return {
+    1: { card: FAME_CARDS[1].card, remaining: FAME_CARDS[1].copies },
+    3: { card: FAME_CARDS[3].card, remaining: FAME_CARDS[3].copies },
+    5: { card: FAME_CARDS[5].card, remaining: FAME_CARDS[5].copies },
+  };
+}
+
 export function setupMissions(): { pools: MissionPools; track: Record<number, TrackMission | null> } {
   // Create instance pools for each zone
   const nearPool = shuffle(NEAR_MISSIONS.map(createMissionInstance));
@@ -390,6 +398,7 @@ export class GameEngine {
       trackMissions: track,
       missionPools: pools,
       marketStacks,
+      fameMarket: setupFameMarket(),
       hazardDeck,
       pendingMissionReplacements: [],
       log: [],
@@ -569,8 +578,13 @@ export class GameEngine {
     // Reset stack reveal tracking
     player.revealedStacksThisTurn = { 1: false, 3: false, 5: false };
 
-    // Reset power to starting values
-    player.currentPower = { ...player.startingPower };
+    // Power PERSISTS across turns by design — it is NOT reset here.
+    // Only spending (missions, system abilities) or drains (hazards, attacks) remove power.
+    // Per-turn power "income" comes from installations (re-applied in applyInstallationEffects)
+    // and recurring captain abilities (Veteran), clamped to MAX_POWER. The captain START bonus
+    // (Scrapper/Engineer) is applied once at player creation and simply persists.
+    // (Was previously `player.currentPower = { ...player.startingPower }`, which wiped played-card
+    // power and silently re-granted captain start bonuses every turn — see power-persists-intent.)
 
     // Reset info reveal tracking for new turn
     this.state.hasRevealedInfo = false;
@@ -596,6 +610,7 @@ export class GameEngine {
       trackMissions: this.state.trackMissions,
       missionPools: this.state.missionPools,
       marketStacks: this.state.marketStacks,
+      fameMarket: this.state.fameMarket,
       hazardDeck: this.state.hazardDeck,
       pendingMissionReplacements: this.state.pendingMissionReplacements,
     });
@@ -614,6 +629,7 @@ export class GameEngine {
       trackMissions: this.state.trackMissions,
       missionPools: this.state.missionPools,
       marketStacks: this.state.marketStacks,
+      fameMarket: this.state.fameMarket,
       hazardDeck: this.state.hazardDeck,
       pendingMissionReplacements: this.state.pendingMissionReplacements,
     }));
@@ -631,6 +647,7 @@ export class GameEngine {
       this.state.trackMissions = snapshot.trackMissions;
       this.state.missionPools = snapshot.missionPools;
       this.state.marketStacks = snapshot.marketStacks;
+      this.state.fameMarket = snapshot.fameMarket;
       this.state.hazardDeck = snapshot.hazardDeck;
       this.state.pendingMissionReplacements = snapshot.pendingMissionReplacements;
       this.state.pendingAction = null;
@@ -649,6 +666,7 @@ export class GameEngine {
       this.state.trackMissions = snapshot.trackMissions;
       this.state.missionPools = snapshot.missionPools;
       this.state.marketStacks = snapshot.marketStacks;
+      this.state.fameMarket = snapshot.fameMarket;
       this.state.hazardDeck = snapshot.hazardDeck;
       this.state.pendingMissionReplacements = snapshot.pendingMissionReplacements;
       this.state.pendingAction = null;
@@ -2155,6 +2173,29 @@ export class GameEngine {
     return true;
   }
 
+  canBuyFameCard(player: Player): boolean {
+    const station = player.location as 1 | 3 | 5;
+    if (station !== 1 && station !== 3 && station !== 5) return false;
+    const slot = this.state.fameMarket[station];
+    if (!slot || slot.remaining <= 0) return false;
+    return player.credits >= slot.card.cost;
+  }
+
+  // Buy a Fame card: pay credits, gain Fame immediately, set aside (never enters
+  // the deck), decrement the finite supply. Victory (25 Fame) is checked at end of turn.
+  buyFameCard(player: Player): boolean {
+    if (!this.canBuyFameCard(player)) return false;
+    const station = player.location as 1 | 3 | 5;
+    const slot = this.state.fameMarket[station]!;
+    player.credits -= slot.card.cost;
+    player.fame += slot.card.fame;
+    slot.remaining -= 1;
+    this.state.hasRevealedInfo = true;
+    this.stats?.onCreditSpent(player.id, slot.card.cost);
+    this.log(`${player.name} bought ${slot.card.title} (+${slot.card.fame} Fame) for ${slot.card.cost} credits`, 'reward');
+    return true;
+  }
+
   canBuyAndInstall(player: Player, station: 1 | 3 | 5, stackIndex: number, _targetSystem: SystemType, cardIndex?: number): boolean {
     // Must be at the station
     if (player.location !== station) return false;
@@ -2858,6 +2899,9 @@ export class GameEngine {
         }
         return false;
 
+      case 'BUY_FAME_CARD':
+        return this.buyFameCard(player);
+
       case 'END_TURN':
         this.endTurn();
         return true;
@@ -2870,8 +2914,10 @@ export class GameEngine {
 
       case 'REVEAL_STACK':
         if (player.location === action.station || action.station === 1) {
-          this.revealMarketStack(action.station, action.stackIndex);
-          return true;
+          // Propagate the result: revealMarketStack returns false when the
+          // per-turn reveal limit is hit (or the stack is already revealed),
+          // so callers/UI can react instead of silently no-op'ing.
+          return this.revealMarketStack(action.station, action.stackIndex);
         }
         return false;
 

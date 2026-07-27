@@ -1022,6 +1022,42 @@ describe('Fame on Purchase', () => {
     }
   });
 
+  it('BUY_FAME_CARD grants Fame, costs credits, decrements supply, and adds no card to the deck', () => {
+    const engine = createTestGame();
+    const player = engine.getCurrentPlayer();
+    player.location = 1;
+    player.credits = 10;
+
+    const slot = engine.getState().fameMarket[1]!;
+    const cardsBefore = player.deck.length + player.hand.length + player.discard.length;
+    const fameBefore = player.fame;
+    const remainingBefore = slot.remaining;
+
+    expect(engine.dispatch({ type: 'BUY_FAME_CARD' })).toBe(true);
+
+    expect(player.fame).toBe(fameBefore + slot.card.fame);
+    expect(player.credits).toBe(10 - slot.card.cost);
+    expect(engine.getState().fameMarket[1]!.remaining).toBe(remainingBefore - 1);
+    expect(player.deck.length + player.hand.length + player.discard.length).toBe(cardsBefore);
+  });
+
+  it('BUY_FAME_CARD is rejected off-station, when broke, or when supply is empty', () => {
+    const engine = createTestGame();
+    const player = engine.getCurrentPlayer();
+
+    player.location = 2; // not a station
+    player.credits = 10;
+    expect(engine.dispatch({ type: 'BUY_FAME_CARD' })).toBe(false);
+
+    player.location = 1;
+    player.credits = 0; // can't afford
+    expect(engine.dispatch({ type: 'BUY_FAME_CARD' })).toBe(false);
+
+    player.credits = 10;
+    engine.getState().fameMarket[1]!.remaining = 0; // sold out
+    expect(engine.dispatch({ type: 'BUY_FAME_CARD' })).toBe(false);
+  });
+
   it('should grant fame when buy-and-installing a card with fame value', () => {
     const engine = createTestGame();
     const player = engine.getCurrentPlayer();
@@ -1126,6 +1162,55 @@ describe('Hazards Given Counter', () => {
     engine.dispatch({ type: 'END_TURN' }); // End player 1's turn, back to player 0
 
     expect(player0.hazardsGivenThisTurn).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Power Persistence Tests
+// Power is durable by design: it carries across turns and is only removed by
+// spending (missions/abilities) or drains (hazards/attacks). See power-persists-intent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Power persistence across turns', () => {
+  beforeEach(() => {
+    resetInstanceIdCounter();
+  });
+
+  it('should NOT reset accumulated power at turn start (player has no installs/turn-start income)', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!; // Scrapper: no installs, no turn-start power ability
+    expect(player0.captain.ability.turnStart).toBeUndefined();
+
+    // Simulate power accumulated this turn (e.g. from played cards) that the old
+    // reset would have wiped.
+    player0.currentPower = { weapons: 5, computers: 4, engines: 3, logistics: 2 };
+
+    engine.dispatch({ type: 'END_TURN' }); // end player 0
+    engine.dispatch({ type: 'END_TURN' }); // end player 1 -> back to player 0's next turn
+
+    // Power persists unchanged — nothing spent, no income, no drain.
+    expect(player0.currentPower).toEqual({ weapons: 5, computers: 4, engines: 3, logistics: 2 });
+  });
+
+  it('should add installation power on top of carried-over power each turn (clamped to MAX_POWER)', () => {
+    const engine = createTestGame(2);
+    const player0 = engine.getPlayer(0)!;
+
+    // Install a fixed-power install: Afterburner Surge installs +2 Engines/turn.
+    const afterburner = ALL_ACTION_CARDS.find(c => c.installData?.power?.engines)!;
+    player0.installations[afterburner.system!] = createCardInstance(afterburner);
+    const enginesBonus = afterburner.installData!.power!.engines!;
+
+    player0.currentPower = { weapons: 1, computers: 1, engines: 3, logistics: 1 };
+
+    engine.dispatch({ type: 'END_TURN' });
+    engine.dispatch({ type: 'END_TURN' });
+
+    // Carried 3 engines + install income, clamped to MAX_POWER; other systems carried unchanged.
+    expect(player0.currentPower.engines).toBe(Math.min(MAX_POWER, 3 + enginesBonus));
+    expect(player0.currentPower.weapons).toBe(1);
+    expect(player0.currentPower.computers).toBe(1);
+    expect(player0.currentPower.logistics).toBe(1);
   });
 });
 

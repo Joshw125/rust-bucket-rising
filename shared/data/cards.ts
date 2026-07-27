@@ -2,7 +2,7 @@
 // RUST BUCKET RISING - Card Data
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import type { StarterCard, ActionCard, HazardCard } from '../types/index.js';
+import type { StarterCard, ActionCard, HazardCard, FameCard } from '../types/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Starting Cards (10 total per player)
@@ -798,6 +798,28 @@ export const HAZARD_CARDS: HazardCard[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 // Export All Cards
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fame (victory-point) Cards — credit→Fame sinks sold at stations.
+// Tiered so deeper stations sell better Fame (rewards pushing outward).
+// Bought with credits, grant Fame immediately, set aside (never enter your deck).
+// Finite supply per station.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const FAME_CARDS: Record<1 | 3 | 5, { card: FameCard; copies: number }> = {
+  1: {
+    card: { id: 'sponsor-plug', title: 'Sponsor Plug', cost: 4, fame: 1, flavor: 'A few seconds of airtime for the right logo.' },
+    copies: 6,
+  },
+  3: {
+    card: { id: 'syndication-deal', title: 'Syndication Deal', cost: 6, fame: 2, flavor: 'Your best moments, rerun across a hundred systems.' },
+    copies: 4,
+  },
+  5: {
+    card: { id: 'prime-time-special', title: 'Prime-Time Special', cost: 9, fame: 3, flavor: 'Top billing. The whole galaxy is watching.' },
+    copies: 3,
+  },
+};
 
 export const ALL_ACTION_CARDS = [...TIER_1_CARDS, ...TIER_2_CARDS, ...TIER_3_CARDS];
 

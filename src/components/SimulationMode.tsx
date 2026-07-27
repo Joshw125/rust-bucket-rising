@@ -267,6 +267,8 @@ function formatAction(action: GameAction): string {
       return `Buy card (stack ${action.stackIndex}, idx ${action.cardIndex})`;
     case 'BUY_AND_INSTALL':
       return `Buy + install to ${action.targetSystem}`;
+    case 'BUY_FAME_CARD':
+      return `Buy fame card`;
     case 'END_TURN':
       return `— End turn —`;
     case 'RESOLVE_PENDING':
