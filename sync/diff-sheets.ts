@@ -48,9 +48,10 @@ interface DiffResult {
 async function loadAppData() {
   // We read the TS files and extract data using simple parsing
   // rather than importing (which would need the full Vite/TS build chain)
-  const cardsPath = path.resolve(__dirname, '..', 'src', 'data', 'cards.ts');
-  const captainsPath = path.resolve(__dirname, '..', 'src', 'data', 'captains.ts');
-  const missionsPath = path.resolve(__dirname, '..', 'src', 'data', 'missions.ts');
+  // Data moved src/data -> shared/data in the April 2026 server-authority migration
+  const cardsPath = path.resolve(__dirname, '..', 'shared', 'data', 'cards.ts');
+  const captainsPath = path.resolve(__dirname, '..', 'shared', 'data', 'captains.ts');
+  const missionsPath = path.resolve(__dirname, '..', 'shared', 'data', 'missions.ts');
 
   return {
     cardsSource: fs.readFileSync(cardsPath, 'utf-8'),

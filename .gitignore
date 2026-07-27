@@ -43,3 +43,7 @@ nul
 # Sync tooling
 sync/credentials.json
 sync/cache/
+
+# Arena harness ephemeral state
+sim/.arena/*.json
+sim/.arena/*.jsonl
