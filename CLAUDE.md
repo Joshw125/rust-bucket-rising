@@ -146,8 +146,8 @@ Identified during April 2026 playtest:
 
 - **Mag-Leash** install text says "+1 move" but `installData` grants `+1 power` on hazard given. Either rewrite text or change data.
 - **Targeting Array** install effect (`conditionalMissionDiscount`) is declared but `applyInstallationEffects` doesn't read it. Effect is dead code.
-- **Mission reward `credits: 1` double-dips** on gear rewards — fires once at completion via `applyMissionRewards` AND again every turn start via `applyInstallationEffects`. Orbital Delivery's "+1 credit/turn gear" therefore also gives +1 credit on completion. Unclear if intentional.
-- **`cardIndex` in BUY_CARD / BUY_AND_INSTALL is unenforced** — rulebook says only the top card of a revealed stack is buyable, but the engine accepts any index.
+- ~~Mission reward `credits: 1` "double-dips" on gear rewards~~ — **RULED INTENTIONAL (July 2026)**: a gear's benefit starts the turn you earn it — the completion payout is the *first tick* of the ongoing effect, which then recurs each turn start. Not a bug; do not "fix".
+- ~~`cardIndex` in BUY_CARD / BUY_AND_INSTALL is unenforced~~ — **RULED INTENTIONAL (July 2026)**: looking through a stack grants access to buy ANY card in it. The engine was correct; the "top card only" rulebook claim was wrong. Not a bug; do not "fix".
 
 ## Workflow
 Sheets (source of truth for stats) → Dextrous (card design/JPGs) → Print / TTS / App

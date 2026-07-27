@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rust Bucket Rising — Player Reference Card (4.25 × 6 in)</title>
+<style>
+  @page { size: letter portrait; margin: 0.5in; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #111; background: #f0f0f0; }
+  .sheet { display: flex; flex-direction: column; align-items: center; gap: 0.3in; padding: 0.3in 0; }
+  .card {
+    width: 4.25in; height: 6in; background: #fff;
+    border: 1.5pt solid #111; border-radius: 8pt;
+    padding: 0.14in 0.16in; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  @media print {
+    body { background: #fff; }
+    .sheet { padding: 0; gap: 0; }
+    .card { page-break-after: always; margin: 0 auto; }
+    .note { display: none; }
+  }
+  .title { text-align: center; font-weight: 800; font-size: 11.5pt; letter-spacing: 0.5pt; }
+  .subtitle { text-align: center; font-size: 6.5pt; color: #555; text-transform: uppercase; letter-spacing: 1.5pt; margin-bottom: 5pt; }
+  h2 {
+    font-size: 8pt; text-transform: uppercase; letter-spacing: 0.8pt;
+    background: #111; color: #fff; padding: 1.5pt 5pt; border-radius: 3pt;
+    margin: 5pt 0 3pt;
+  }
+  p, li, td, th { font-size: 7.6pt; line-height: 1.32; }
+  ul { list-style: none; }
+  li { padding-left: 8pt; text-indent: -8pt; margin-bottom: 1pt; }
+  li::before { content: "▸ "; font-size: 6.5pt; }
+  b { font-weight: 700; }
+  .econ { border: 1pt solid #111; border-radius: 4pt; padding: 3.5pt 5pt; margin: 2pt 0; }
+  .econ p { margin-bottom: 1.5pt; }
+  table { width: 100%; border-collapse: collapse; margin: 1pt 0; }
+  td { padding: 1.5pt 3pt; border-bottom: 0.5pt solid #ccc; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .sys { font-weight: 800; white-space: nowrap; }
+  .w { color: #b91c1c; } .c { color: #1d4ed8; } .e { color: #c2570b; } .g { color: #15803d; }
+  .cost { font-weight: 700; white-space: nowrap; }
+  .flavor { margin-top: auto; text-align: center; font-style: italic; font-size: 6.8pt; color: #666; padding-top: 3pt; }
+  .turnstep { display: flex; gap: 4pt; margin-bottom: 2pt; }
+  .turnstep .n { font-weight: 800; font-size: 8pt; min-width: 9pt; }
+  .note { max-width: 6.5in; font-size: 9pt; color: #444; text-align: center; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <!-- ══════════════ FRONT ══════════════ -->
+  <div class="card">
+    <div class="title">RUST BUCKET RISING</div>
+    <div class="subtitle">Player Reference · Front</div>
+
+    <h2>Your Turn</h2>
+    <div class="turnstep"><span class="n">1</span><p><b>START</b> — installed cards &amp; captain trigger · reveal hazards in your hand</p></div>
+    <div class="turnstep"><span class="n">2</span><p><b>ACTIONS</b> — any number, any order: play cards · move · use system abilities · complete the mission here · buy / install (at a station) · clear hazards</p></div>
+    <div class="turnstep"><span class="n">3</span><p><b>CLEANUP</b> — discard your hand <i>and</i> played cards · draw 5</p></div>
+
+    <h2>The Two Economies</h2>
+    <div class="econ">
+      <p>⚡ <b>POWER CARRIES OVER</b> between turns (max 6 per system). It is only lost when you <b>spend</b> it.</p>
+      <p>◉ <b>CREDITS VANISH</b> at end of turn — spend them now.</p>
+      <p>⚡ with <b>no system named</b> goes wherever you choose.</p>
+    </div>
+
+    <h2>System Abilities <span style="font-weight:400; text-transform:none;">(each once per turn)</span></h2>
+    <table>
+      <tr><td class="sys w">WEAPONS</td><td><span class="cost">2⚡</span> give a hazard to a player at your location<br><span class="cost">4⚡</span> give a hazard to anyone</td></tr>
+      <tr><td class="sys c">COMPUTERS</td><td><span class="cost">1⚡</span> draw 1 card &nbsp;·&nbsp; <span class="cost">3⚡</span> draw 3, keep 1</td></tr>
+      <tr><td class="sys e">ENGINES</td><td><span class="cost">1⚡</span> move 1 space — <b>no limit</b>, pay per space</td></tr>
+      <tr><td class="sys g">LOGISTICS</td><td><span class="cost">1⚡</span> gain 1 credit &nbsp;·&nbsp; <span class="cost">3⚡</span> trash a card</td></tr>
+    </table>
+
+    <h2>Moving</h2>
+    <p>Each space costs <b>1 Engines ⚡</b> — or a free move from a card or captain.</p>
+
+    <p class="flavor">"The duct tape is load-bearing. Don't touch it."</p>
+  </div>
+
+  <!-- ══════════════ BACK ══════════════ -->
+  <div class="card">
+    <div class="title">RUST BUCKET RISING</div>
+    <div class="subtitle">Player Reference · Back</div>
+
+    <h2>Markets &nbsp;<span style="font-weight:400; text-transform:none;">(stations 1 / 3 / 5 = Tier 1 / 2 / 3)</span></h2>
+    <ul>
+      <li>Once per turn at a station: <b>look through one stack</b> — it stays open</li>
+      <li>Buy <b>any card</b> from an open stack (Tier 1 is always open) — bought cards go to your <b>discard</b></li>
+      <li><b>★ on a card = gain that Fame</b> the moment you buy it</li>
+    </ul>
+
+    <h2>Installing</h2>
+    <ul>
+      <li>Pay the install cost · <b>one install per system</b> (a new one replaces the old)</li>
+      <li>Installed cards trigger <b>every turn start</b></li>
+    </ul>
+
+    <h2>Missions</h2>
+    <ul>
+      <li>Be there · <b>spend</b> the printed power · gain the Fame + reward</li>
+      <li>Missions are <b>face-down until someone visits</b> that location</li>
+      <li><b>Gear</b> starts working the turn you earn it — one gear slot per system, and only another gear replaces it</li>
+    </ul>
+
+    <h2>Hazards</h2>
+    <ul>
+      <li>Active while in your <b>hand</b> · clear one on your turn by paying its printed cost</li>
+      <li><b>Game end: −1 Fame</b> for every hazard anywhere in your cards</li>
+    </ul>
+
+    <h2>Winning</h2>
+    <ul>
+      <li><b>25 Fame</b> → every other player takes one last turn → <b>highest Fame wins</b></li>
+      <li>Ties: most hazards held → most missions → most credits</li>
+    </ul>
+
+    <p class="flavor">"By signing the waiver, you agree the waiver means nothing."</p>
+  </div>
+
+  <p class="note">Print at 100% scale (no "fit to page"). One card per page — duplex "flip on long edge" aligns front and back. Cut at the border: 4.25 × 6 in.</p>
+</div>
+</body>
+</html>
